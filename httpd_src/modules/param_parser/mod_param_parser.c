@@ -184,12 +184,13 @@ static const command_rec pp_config_cmds[] = {
  * @param p IN pool
  */
 static void pp_register_hooks(apr_pool_t * p) {
-  const char **pre = hspc_module_req(p, __FILE__);
   /* register hooks */
-  ap_hook_post_config(pp_post_config, pre, NULL, APR_HOOK_LAST);
-  ap_hook_access_checker(pp_access_checker, pre, NULL, APR_HOOK_LAST);
+  ap_hook_post_config(pp_post_config, NULL, NULL, APR_HOOK_LAST);
+  ap_hook_access_checker(pp_access_checker, NULL, NULL, APR_HOOK_LAST);
+  /* XXX
   ap_register_input_filter("pp-filter-in",
                            pp_filter_in, NULL, AP_FTYPE_RESOURCE);
+     XXX */
 }
 
 /************************************************************************

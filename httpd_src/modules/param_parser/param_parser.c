@@ -19,7 +19,10 @@
 #include <util_filter.h>
 
 /* apr */
-#include <apr_bucket.h>
+#include <apr_buckets.h>
+
+/* self */
+#include "param_parser.h" 
 /**************************************************************************
  * Private 
  **************************************************************************/
@@ -38,8 +41,3 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
 					      apr_read_type_e block, 
 					      apr_off_t nbytes); 
 
-#ifdef __cplusplus
-}
-#endif
-
-#endif 
