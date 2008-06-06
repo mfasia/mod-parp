@@ -20,6 +20,9 @@
 #include <util_filter.h>
 
 /* apr */
+
+/* param parser */
+#include "param_parser.h"
   
 /************************************************************************
  * Defines 
@@ -59,11 +62,6 @@ module AP_MODULE_DECLARE_DATA param_parser_module;
  */
 static int pp_post_config(apr_pool_t * pconf, apr_pool_t * plog, 
                            apr_pool_t * ptemp, server_rec * s) {
-  fprintf(stderr, "post_config\n");
-  fflush(stderr);
-
-  TRC_SET_PER_MODULE_VARS(s);
-
   return DECLINED;
 }
 
@@ -75,28 +73,13 @@ static int pp_post_config(apr_pool_t * pconf, apr_pool_t * plog,
  * @return DECLINED 
  */
 static int pp_access_checker(request_rec * r) {
-  return DECLINED;
-}
+  parp_t *parp;
+  apr_table_t *tl;
 
-/**
- * input filter
- *
- * @param f IN filter record
- * @param bb IN bucket brigade
- * @param mode IN mode
- * @param block IN block mode
- * @param nbytes IN requested bytes
- *
- * @return apr status from upper input filter
- *
- * @note: the requested bytes is not neccessary that what you realy get
- */
-AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f, 
-                                              apr_bucket_brigade * bb, 
-					      ap_input_mode_t mode, 
-					      apr_read_type_e block, 
-					      apr_off_t nbytes) {
-  return ap_get_brigade(f->next, bb, mode, block, nbytes);
+  parp = parp_new(r);
+  parp_get_params(parp, &tl);
+
+  return DECLINED;
 }
 
 /************************************************************************
@@ -187,10 +170,8 @@ static void pp_register_hooks(apr_pool_t * p) {
   /* register hooks */
   ap_hook_post_config(pp_post_config, NULL, NULL, APR_HOOK_LAST);
   ap_hook_access_checker(pp_access_checker, NULL, NULL, APR_HOOK_LAST);
-  /* XXX
-  ap_register_input_filter("pp-filter-in",
-                           pp_filter_in, NULL, AP_FTYPE_RESOURCE);
-     XXX */
+  ap_register_input_filter("parap-forward-filter",
+                           parp_forward_filter, NULL, AP_FTYPE_RESOURCE);
 }
 
 /************************************************************************

@@ -31,6 +31,7 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
 					      ap_input_mode_t mode, 
 					      apr_read_type_e block, 
 					      apr_off_t nbytes); 
+AP_DECLARE(const char *) parp_get_error(parp_t *self); 
 
 #ifdef __cplusplus
 }
