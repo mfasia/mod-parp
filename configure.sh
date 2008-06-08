@@ -8,5 +8,4 @@ cd $HTTPD
             --enable-so \
             --enable-static-support \
             --enable-param-parser=static \
-	    --enable-ssl \
-	    --with-ssl=../openssl
+	    --enable-ssl

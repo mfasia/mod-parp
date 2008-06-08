@@ -1,0 +1,51 @@
+StartServers            1
+MinSpareServers         1
+MaxSpareServers         2
+MaxClients              20
+MaxRequestsPerChild     100000
+ServerName              sesdev.tarsec.com
+User                    cli
+Group                   users
+ServerAdmin             webmaster@sesdev.tarsec.com
+ServerRoot              ##SERVER_ROOT##
+DocumentRoot            ##SERVER_ROOT##/htdocs
+ServerSignature         off
+HostnameLookups         off
+UseCanonicalName        on
+UseCanonicalPhysicalPort on
+LockFile                ##SERVER_ROOT##/logs/accept.lock
+Timeout                 300
+KeepAlive               On
+MaxKeepAliveRequests    100
+
+KeepAliveTimeout        64
+DefaultType             text/plain
+
+LogFormat               "%h %l %u %t \"%r\" %>s %b cc=\"%{ClientCorrelator}i\" rc=\"%{RequestCorrelator}i\" \"%{User-Agent}i\" %{HSP_CL_AC}o %{HSP_CL_RF}o %{HSP_CL_SE}o %T \"%{HSP_UE_unparsed_uri}i\" #%P"
+
+LogLevel                debug 
+ErrorLog                ##SERVER_ROOT##/logs/error_log
+TransferLog             ##SERVER_ROOT##/logs/access_log
+PidFile                 ##SERVER_ROOT##/logs/pid
+
+AddOutputFilter         INCLUDES .shtml
+Options                 Includes
+
+TypesConfig             ##SERVER_ROOT##/conf/mime.types
+CoreDumpDirectory       ##SERVER_ROOT##/logs
+
+# Enable extended statistics for mod_status
+ExtendedStatus          On
+
+NameVirtualHost localhost:8088
+Listen          localhost:8088
+
+<VirtualHost localhost:8088>
+   ServerName localhost
+   ServerAdmin webmaster@localhost
+
+   <Location /test>
+     SetHandler parp-test-handler
+   </Location>
+
+</VirtualHost>

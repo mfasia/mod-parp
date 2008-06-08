@@ -1,0 +1,9 @@
+
+CLIENT
+_REQ localhost 8088
+__GET /test/get HTTP/1.1
+__Host: localhost
+__
+_WAIT
+END
+

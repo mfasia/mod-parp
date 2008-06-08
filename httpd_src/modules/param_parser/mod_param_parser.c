@@ -60,7 +60,7 @@ module AP_MODULE_DECLARE_DATA param_parser_module;
  *
  * @return DECLINED
  */
-static int pp_post_config(apr_pool_t * pconf, apr_pool_t * plog, 
+static int parp_post_config(apr_pool_t * pconf, apr_pool_t * plog, 
                            apr_pool_t * ptemp, server_rec * s) {
   return DECLINED;
 }
@@ -72,7 +72,7 @@ static int pp_post_config(apr_pool_t * pconf, apr_pool_t * plog,
  *
  * @return DECLINED 
  */
-static int pp_access_checker(request_rec * r) {
+static int parp_access_checker(request_rec * r) {
   parp_t *parp;
   apr_table_t *tl;
 
@@ -80,6 +80,49 @@ static int pp_access_checker(request_rec * r) {
   parp_get_params(parp, &tl);
 
   return DECLINED;
+}
+
+/**
+ * handler hook.
+ *
+ * @param r IN request record
+ *
+ * @return DECLINED or OK
+ */
+static int parp_handler(request_rec * r) {
+  /* We decline to handle a request if parp-test-handler is not the value
+   * of r->handler 
+   */
+  if (strcmp(r->handler, "parp-test-handler")) {
+    return DECLINED;
+  }
+
+  /* We set the content type before doing anything else */
+  ap_set_content_type(r, "text/html");
+
+  /* If the request is for a header only, and not a request for
+   * the whole content, then return OK now. We don't have to do
+   * anything else. 
+   */
+  if (r->header_only) {
+    return OK;
+  }
+
+  /* TODO: soak in the body */
+  
+  ap_rputs("<HTML>\n", r);
+  ap_rputs("  <HEAD>\n", r);
+  ap_rputs("    <TITLE>\n  Hello There\n  </TITLE>\n", r);
+  ap_rputs("  </HEAD>\n\n", r);
+  ap_rputs("<BODY BGCOLOR=\"#FFFFFF\"\n", r);
+  ap_rputs("  <H1>mod_header_filter</H1>\n", r);
+  ap_rputs("  mod_header_filter: parp-test-handler\n", r);
+
+  /* TODO: print the parameter tables here for httest */
+  
+  ap_rputs("</BODY></HTML>\n", r);
+
+  return OK;
 }
 
 /************************************************************************
@@ -93,7 +136,7 @@ static int pp_access_checker(request_rec * r) {
  *
  * @return dir config
  */
-static void *pp_dconf_create(apr_pool_t * p, char *dir) {
+static void *parp_dconf_create(apr_pool_t * p, char *dir) {
   return NULL;
 }
 
@@ -105,7 +148,7 @@ static void *pp_dconf_create(apr_pool_t * p, char *dir) {
  *
  * @return server config
  */
-static void *pp_sconf_create(apr_pool_t * p, server_rec *s) {
+static void *parp_sconf_create(apr_pool_t * p, server_rec *s) {
   return NULL;
 }
 
@@ -118,7 +161,7 @@ static void *pp_sconf_create(apr_pool_t * p, server_rec *s) {
  *
  * @return merged dir config
  */
-static void *pp_dconf_merge(apr_pool_t * p, void *basev, void *addv) {
+static void *parp_dconf_merge(apr_pool_t * p, void *basev, void *addv) {
   return NULL;
 }
 
@@ -131,7 +174,7 @@ static void *pp_dconf_merge(apr_pool_t * p, void *basev, void *addv) {
  *
  * @return merged dir config
  */
-static void *pp_sconf_merge(apr_pool_t * p, void *basev, void *addv) {
+static void *parp_sconf_merge(apr_pool_t * p, void *basev, void *addv) {
   return NULL;
 }
 
@@ -144,15 +187,15 @@ static void *pp_sconf_merge(apr_pool_t * p, void *basev, void *addv) {
  *
  * @return NULL of error text
  */
-static const char *pp_cmd(cmd_parms * cmd, void *dcfg, const char *arg) {
+static const char *parp_cmd(cmd_parms * cmd, void *dcfg, const char *arg) {
   return NULL;
 }
 
-static const command_rec pp_config_cmds[] = {
-  AP_INIT_ITERATE("SKL_dummy1", pp_cmd, NULL,
+static const command_rec parp_config_cmds[] = {
+  AP_INIT_ITERATE("SKL_dummy1", parp_cmd, NULL,
                   ACCESS_CONF | RSRC_CONF,
                   "SKL_dummy1 <any>, param_parser dummy command one, default is 'this'"),
-  AP_INIT_TAKE1("SKL_dummy2", pp_cmd, NULL,
+  AP_INIT_TAKE1("SKL_dummy2", parp_cmd, NULL,
                 ACCESS_CONF | RSRC_CONF,
                 "SKL_dummy1 <any>, param_parser dummy command two, default is 'that'"),
   { NULL }
@@ -166,10 +209,11 @@ static const command_rec pp_config_cmds[] = {
  *
  * @param p IN pool
  */
-static void pp_register_hooks(apr_pool_t * p) {
+static void parp_register_hooks(apr_pool_t * p) {
   /* register hooks */
-  ap_hook_post_config(pp_post_config, NULL, NULL, APR_HOOK_LAST);
-  ap_hook_access_checker(pp_access_checker, NULL, NULL, APR_HOOK_LAST);
+  ap_hook_post_config(parp_post_config, NULL, NULL, APR_HOOK_LAST);
+  ap_hook_access_checker(parp_access_checker, NULL, NULL, APR_HOOK_LAST);
+  ap_hook_handler(parp_handler, NULL, NULL, APR_HOOK_LAST);
   ap_register_input_filter("parap-forward-filter",
                            parp_forward_filter, NULL, AP_FTYPE_RESOURCE);
 }
@@ -179,10 +223,10 @@ static void pp_register_hooks(apr_pool_t * p) {
  ***********************************************************************/
 module AP_MODULE_DECLARE_DATA param_parser_module = {
   STANDARD20_MODULE_STUFF,
-  pp_dconf_create,                         /**< dir config creater */
-  pp_dconf_merge,                          /**< dir merger */
-  pp_sconf_create,                         /**< server config */
-  pp_sconf_merge,                          /**< server merger */
-  pp_config_cmds,                          /**< command table */
-  pp_register_hooks,                       /**< hook registery */
+  parp_dconf_create,                         /**< dir config creater */
+  parp_dconf_merge,                          /**< dir merger */
+  parp_sconf_create,                         /**< server config */
+  parp_sconf_merge,                          /**< server merger */
+  parp_config_cmds,                          /**< command table */
+  parp_register_hooks,                       /**< hook registery */
 };

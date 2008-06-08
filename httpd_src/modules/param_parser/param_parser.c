@@ -273,7 +273,7 @@ AP_DECLARE(apr_status_t) parp_get_params(parp_t *self, apr_table_t **params) {
     if (r->args) {
     }
   }
-
+  return APR_SUCCESS;
 }
 
 /**
