@@ -33,6 +33,8 @@ struct parp_s {
   apr_bucket_brigade *bb;
   apr_table_t *params;
   char *error; 
+  int flags;
+  parp_byte_range_t range;
 };
 
 /**
@@ -114,19 +116,25 @@ static unsigned char parp_hex_2_char(unsigned char *what) {
  *
  * @param string INOUT urlencoded string
  * @param len INOUT len of string
+ * @param bottom IN bottom of allowed range
+ * @param top IN top of allowed range
  *
  * @return APR_SUCCESS or APR_EINVAL
  */
-static apr_status_t parp_urldecode(unsigned char *string) {
+static apr_status_t parp_urldecode(parp_t *self, unsigned char *string) {
+  apr_status_t status;
+  unsigned char val;
+  long int i;
+
   unsigned char *cur = string;
-  long int i, new_len;
   apr_size_t len = strlen(string);
 
   if (!string) {
     return APR_EINVAL;
   }
 
-  i = new_len = 0;
+  status  = APR_SUCCESS;
+  i = 0;
   while (i < len) {
     if (string[i] == '%') {
       /* need two bytes -> %xx */
@@ -139,24 +147,26 @@ static apr_status_t parp_urldecode(unsigned char *string) {
 	      ((c1 >= 'A')&&(c1 <= 'F')))
 	    && (((c2 >= '0')&&(c2 <= '9')) || ((c2 >= 'a')&&(c2 <= 'f')) ||
 		((c2 >= 'A')&&(c2 <= 'F'))) ) {
-	  *cur++ = parp_hex_2_char(&string[i + 1]);
-	  new_len++;
+	  val = parp_hex_2_char(&string[i + 1]);
+	  /* check range */
+	  if (val < self->range.from || val > self->range.to) {
+	    val = ' ';
+	    status = APR_EINVAL;
+	  }
+	  *cur++ = val;
 	  i += 3;
 	} else {
 	  *cur++ = '%';
 	  *cur++ = c1;
 	  *cur++ = c2;
-	  new_len += 3;
 	  i += 3;
 	}
       } else {
 	*cur++ = '%';
-	new_len++;
 	i++;
 
 	if (i + 1 < len) {
 	  *cur++ = string[i];
-	  new_len++;
 	  i++;
 	}
       }
@@ -168,14 +178,13 @@ static apr_status_t parp_urldecode(unsigned char *string) {
 	*cur++ = string[i];
       }
 
-      new_len++;
       i++;
     }
   }
 
   *cur = '\0';
 
-  return new_len;
+  return status;
 }
 /**
  * Urlencode parser
@@ -190,7 +199,7 @@ static apr_status_t parp_urldecode(unsigned char *string) {
  */
 static apr_status_t parp_urlencode(parp_t *self, const char *data, 
                                    apr_size_t len) {
-
+  apr_status_t status;
   char *key;
   char *val;
   char *pair;
@@ -202,10 +211,27 @@ static apr_status_t parp_urlencode(parp_t *self, const char *data,
     val = pair;
     key = ap_getword_nc(self->pool, &val, '=');
     /* url decode key val */
-    parp_urldecode(key);
-    parp_urldecode(val);
-    /* store it to a table */
-    apr_table_addn(self->params, key, val);
+    if (!key) {
+      return APR_EINVAL;
+    }
+
+    if ((status = parp_urldecode(self, key)) == APR_SUCCESS) {
+      if (val) {
+        if ((status = parp_urldecode(self, val)) != APR_SUCCESS) {
+	  return status;
+        }
+      }
+      else {
+        val = apr_pstrdup(self->pool, "");
+      }
+      /* store it to a table */
+      apr_table_addn(self->params, key, val);
+    }
+    else {
+      if (! self->flags & PARP_FLAGS_CONT_ON_ERR) {
+	return status;
+      }
+    }
   }
   
   return APR_SUCCESS;
@@ -237,12 +263,18 @@ static apr_status_t parp_multipart(parp_t *self, const char *data,
  *
  * @return new parameter parser instance
  */
-AP_DECLARE(parp_t *) parp_new(request_rec *r) {
-  parp_t *self = apr_pcalloc(r->pool, sizeof(*self));
+AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags,
+                              parp_byte_range_t range) {
+  parp_t *self = apr_pcalloc(r->pool, sizeof(parp_t));
 
   self->pool = r->pool;
   self->r = r;
   self->bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+  self->params = apr_table_make(r->pool, 5);
+  self->flags = flags;
+  self->range = range;
+
+  return self;
 }
 
 /**
@@ -255,7 +287,7 @@ AP_DECLARE(parp_t *) parp_new(request_rec *r) {
  *
  * @note: see parap_error(self) for detailed error message
  */
-AP_DECLARE(apr_status_t) parp_get_params(parp_t *self, apr_table_t **params) {
+AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
   apr_status_t status;
   char *data;
   apr_size_t len;
@@ -264,13 +296,36 @@ AP_DECLARE(apr_status_t) parp_get_params(parp_t *self, apr_table_t **params) {
   
   if (r->method_number == M_POST) {
     if (r->args) {
+      if ((status = parp_urlencode(self, r->args, strlen(r->args))) 
+	  != APR_SUCCESS) {
+	return status;
+      }
     }
     if ((status = parp_get_payload(self, &data, &len)) != APR_SUCCESS) {
       return status;
     }
+    if (len > 2 && strncmp(&data[len-2], "\r\n", 2) == 0) {
+      /* cut away the leading \r\n */
+      data[len-2] = 0;
+    }
+    else if (len > 1 && data[len -1] == '\n'){
+      /* cut away the leading \n */
+      data[len-1] = 0;
+    }
+    else {
+      data[len] = 0;
+    }
+    if ((status = parp_urlencode(self, data, len)) != APR_SUCCESS) {
+      return status;
+    }
+
   }
   else if (r->method_number == M_GET) {
     if (r->args) {
+      if ((status = parp_urlencode(self, r->args, strlen(r->args))) 
+	  != APR_SUCCESS) {
+	return status;
+      }
     }
   }
   return APR_SUCCESS;
@@ -298,11 +353,11 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
   const char *buf;
 
   apr_off_t read = 0;
-  apr_bucket_brigade *cur = f->ctx;
+  parp_t *self = f->ctx;
 
   /* do never send a bigger brigade than request with "nbytes"! */
-  while (read < nbytes && !APR_BRIGADE_EMPTY(cur)) {
-    e = APR_BRIGADE_FIRST(cur);
+  while (read < nbytes && !APR_BRIGADE_EMPTY(self->bb)) {
+    e = APR_BRIGADE_FIRST(self->bb);
     rv = apr_bucket_read(e, &buf, &len, block);
 
     if (rv != APR_SUCCESS) {
@@ -321,11 +376,24 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
     read += len; 
   }
   
-  if (APR_BRIGADE_EMPTY(cur)) {
+  if (APR_BRIGADE_EMPTY(self->bb)) {
     /* our work is done so remove this filter */
     ap_remove_input_filter(f);
   }
 
+  return APR_SUCCESS;
+}
+
+/**
+ * Get all parameter/value pairs in this request
+ *
+ * @param self IN instance
+ * @param params OUT table of key/value pairs
+ *
+ * @return APR_SUCCESS
+ */
+AP_DECLARE(apr_status_t) parp_get_params(parp_t *self, apr_table_t **params) {
+  *params = self->params;
   return APR_SUCCESS;
 }
 

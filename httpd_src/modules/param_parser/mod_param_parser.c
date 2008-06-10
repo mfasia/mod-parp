@@ -31,6 +31,9 @@
 /************************************************************************
  * Structurs
  ***********************************************************************/
+typedef struct parp_rconf_s {
+  apr_table_t *params;
+} parp_rconf_t;
 
 /************************************************************************
  * Globals 
@@ -74,11 +77,13 @@ static int parp_post_config(apr_pool_t * pconf, apr_pool_t * plog,
  */
 static int parp_access_checker(request_rec * r) {
   parp_t *parp;
-  apr_table_t *tl;
+  parp_byte_range_t range = { 0, 255 };
 
-  parp = parp_new(r);
-  parp_get_params(parp, &tl);
+  parp = parp_new(r, PARP_FLAGS_NONE, range);
+  parp_read_params(parp);
 
+  ap_set_module_config(r->request_config, &param_parser_module, parp); 
+  
   return DECLINED;
 }
 
@@ -90,6 +95,12 @@ static int parp_access_checker(request_rec * r) {
  * @return DECLINED or OK
  */
 static int parp_handler(request_rec * r) {
+  int i;
+  apr_table_t *tl;
+  apr_table_entry_t *e;
+
+  parp_t *parp = ap_get_module_config(r->request_config, &param_parser_module);
+
   /* We decline to handle a request if parp-test-handler is not the value
    * of r->handler 
    */
@@ -98,7 +109,7 @@ static int parp_handler(request_rec * r) {
   }
 
   /* We set the content type before doing anything else */
-  ap_set_content_type(r, "text/html");
+  ap_set_content_type(r, "text/plain");
 
   /* If the request is for a header only, and not a request for
    * the whole content, then return OK now. We don't have to do
@@ -108,21 +119,25 @@ static int parp_handler(request_rec * r) {
     return OK;
   }
 
-  /* TODO: soak in the body */
-  
-  ap_rputs("<HTML>\n", r);
-  ap_rputs("  <HEAD>\n", r);
-  ap_rputs("    <TITLE>\n  Hello There\n  </TITLE>\n", r);
-  ap_rputs("  </HEAD>\n\n", r);
-  ap_rputs("<BODY BGCOLOR=\"#FFFFFF\"\n", r);
-  ap_rputs("  <H1>mod_header_filter</H1>\n", r);
-  ap_rputs("  mod_header_filter: parp-test-handler\n", r);
-
-  /* TODO: print the parameter tables here for httest */
-  
-  ap_rputs("</BODY></HTML>\n", r);
+  parp_get_params(parp, &tl);
+  e = (apr_table_entry_t *) apr_table_elts(tl)->elts;
+  for (i = 0; i < apr_table_elts(tl)->nelts; ++i) {
+    ap_rprintf(r, "%s = %s\n", e[i].key, e[i].val);
+  }
 
   return OK;
+}
+
+/**
+ * insert filter hook.
+ *
+ * @param r IN request record
+ *
+ * @return DECLINED 
+ */
+static void parp_insert_filter(request_rec * r) {
+  parp_t *parp = ap_get_module_config(r->request_config, &param_parser_module);
+  ap_add_input_filter("parp-forward-filter", parp, r, r->connection);
 }
 
 /************************************************************************
@@ -214,7 +229,9 @@ static void parp_register_hooks(apr_pool_t * p) {
   ap_hook_post_config(parp_post_config, NULL, NULL, APR_HOOK_LAST);
   ap_hook_access_checker(parp_access_checker, NULL, NULL, APR_HOOK_LAST);
   ap_hook_handler(parp_handler, NULL, NULL, APR_HOOK_LAST);
-  ap_register_input_filter("parap-forward-filter",
+  ap_hook_insert_filter(parp_insert_filter, NULL, NULL, APR_HOOK_LAST);
+  ap_hook_insert_error_filter(parp_insert_filter, NULL, NULL, APR_HOOK_LAST);
+  ap_register_input_filter("parp-forward-filter",
                            parp_forward_filter, NULL, AP_FTYPE_RESOURCE);
 }
 

@@ -1,9 +1,22 @@
 
 CLIENT
-_REQ localhost 8088
-__GET /test/get HTTP/1.1
+# Simple GET
+_REQ localhost 16100 
+__GET /test/get?param1=value1&param2=value2&param3=value3%20foo HTTP/1.1
 __Host: localhost
 __
+_EXPECT . "param1 = value1"
+_EXPECT . "param2 = value2"
+_EXPECT . "param3 = value3 foo"
+_WAIT
+
+# Simple POST
+__POST /test/get HTTP/1.1
+__Host: localhost
+__Content-Type: application/x-www-form-urlencoded
+__Content-Length: AUTO
+__
+__param1=value1&param2=value2&param3=value3%20foo
 _WAIT
 END
 

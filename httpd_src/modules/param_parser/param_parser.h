@@ -24,13 +24,22 @@ extern "C" {
  **************************************************************************/
 typedef struct parp_s parp_t;
 
-AP_DECLARE(parp_t *) parp_new(request_rec *r);
-AP_DECLARE(apr_status_t) parp_get_params(parp_t *self, apr_table_t **params);
+#define PARP_FLAGS_NONE 0
+#define PARP_FLAGS_CONT_ON_ERR 1
+typedef struct parp_byte_range_s {
+  unsigned char from;
+  unsigned char to;
+} parp_byte_range_t;
+
+AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags,
+                              parp_byte_range_t range);
+AP_DECLARE(apr_status_t) parp_read_params(parp_t *self);
 AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f, 
                                               apr_bucket_brigade * bb, 
 					      ap_input_mode_t mode, 
 					      apr_read_type_e block, 
 					      apr_off_t nbytes); 
+AP_DECLARE(apr_status_t) parp_get_params(parp_t *self, apr_table_t **params);
 AP_DECLARE(const char *) parp_get_error(parp_t *self); 
 
 #ifdef __cplusplus
