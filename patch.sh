@@ -5,7 +5,9 @@
 MODULE=param_parser
 
 cd httpd/modules
-mkdir $MODULE
+if [ ! -d $MODULE ]; then
+  mkdir $MODULE
+fi
 cd $MODULE
 
 for E in `find ../../../httpd_src/modules/$MODULE -type f | grep -v CVS `; do
