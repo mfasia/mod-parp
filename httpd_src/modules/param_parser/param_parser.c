@@ -33,6 +33,7 @@ struct parp_s {
   request_rec *r;
   apr_bucket_brigade *bb;
   apr_table_t *params;
+  apr_table_t *content_type;
   apr_hash_t *parsers;
   char *error; 
   int flags;
@@ -132,8 +133,9 @@ static apr_status_t parp_urlencode(parp_t *self, const char *data,
 }
 
 static apr_status_t parp_read_content_type(parp_t *self) {
-  const char *part;
+  const char *rest;
   const char *ct;
+  const char *pair;
   const char *key;
   const char *val;
  
@@ -144,10 +146,20 @@ static apr_status_t parp_read_content_type(parp_t *self) {
     return APR_EINVAL;
   }
 
+  rest = ct;
   /* iterate over multipart key/value pairs */
-  while ((part = ap_getword(self->pool, &ct, ';'))) {
-    val = part;
+  while (rest[0]) {
+    pair = ap_getword(self->pool, &rest, ';');
+    /* eat spaces */
+    while (*pair == ' ') {
+      ++pair;
+    }
+    /* get key/value */
+    val = pair;
     key = ap_getword(self->pool, &val, '=');
+    if (key) {
+      apr_table_addn(self->content_type, key, val);
+    }
   }
   
   return APR_SUCCESS;
@@ -167,11 +179,16 @@ static apr_status_t parp_read_content_type(parp_t *self) {
 static apr_status_t parp_multipart(parp_t *self, const char *data, 
                                    apr_size_t len) {
   apr_status_t status;
+  const char *boundary;
 
-  if (!(status = parp_read_content_type(self))) {
+  if ((status = parp_read_content_type(self)) != APR_SUCCESS) {
     return status;
   }
 
+  if (!(boundary = apr_table_get(self->content_type, "boundary"))) {
+    return APR_EINVAL;
+  }
+  
   /* now do all boundaries */
   return APR_SUCCESS;
 }
@@ -199,10 +216,17 @@ static apr_status_t parp_not_impl(parp_t *self, const char *data,
  * @return content type parser
  */
 static parp_parser_f parp_get_parser(parp_t *self, const char *ct) {
+  const char *lct;
+  const char *type;
+
   parp_parser_f parser = NULL;
   
   if (ct) {
-    parser = apr_hash_get(self->parsers, ct, APR_HASH_KEY_STRING);
+    lct = ct;
+    type = ap_getword(self->pool, &lct, ';');
+    if (type) {
+      parser = apr_hash_get(self->parsers, type, APR_HASH_KEY_STRING);
+    }
   }
   if (parser) {
     return parser;
@@ -229,10 +253,11 @@ AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags) {
   self->r = r;
   self->bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
   self->params = apr_table_make(r->pool, 5);
+  self->content_type = apr_table_make(r->pool, 3);
   self->parsers = apr_hash_make(r->pool);
   apr_hash_set(self->parsers, "application/x-www-form-urlencoded", 
                APR_HASH_KEY_STRING, parp_urlencode);
-  apr_hash_set(self->parsers, "application/XXX-implementing", 
+  apr_hash_set(self->parsers, "multipart/form-data", 
                APR_HASH_KEY_STRING, parp_multipart);
   self->flags = flags;
 

@@ -49,5 +49,15 @@ _EXPECT . "!param3"
 _EXPECT . "!param4"
 _WAIT
 
+# POST multipart data
+__POST /test/get HTTP/1.1
+__Host: localhost
+__Content-Type: multipart/form-data; boundary=foo
+__Content-Length: AUTO
+__
+__--foo
+__foobar
+__--foo--
+
 END
 
