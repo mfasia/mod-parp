@@ -21,6 +21,7 @@
 /* apr */
 #include <apr_strings.h>
 #include <apr_buckets.h>
+#include <apr_hash.h>
 
 /* self */
 #include "param_parser.h" 
@@ -32,10 +33,12 @@ struct parp_s {
   request_rec *r;
   apr_bucket_brigade *bb;
   apr_table_t *params;
+  apr_hash_t *parsers;
   char *error; 
   int flags;
-  parp_byte_range_t range;
 };
+
+typedef apr_status_t (*parp_parser_f)(parp_t *, const char *, apr_size_t);
 
 /**
  * Read payload of this request
@@ -95,98 +98,6 @@ static apr_status_t parp_get_payload(parp_t *self, char **data,
 }
 
 /**
- * Hex to char
- *
- * @param what IN hex number as a string
- *
- * @return char
- */
-static unsigned char parp_hex_2_char(unsigned char *what) {
-  register unsigned char digit;
-
-  digit = (what[0] >= 'A' ? ((what[0] & 0xdf) - 'A') + 10 : (what[0] - '0'));
-  digit *= 16;
-  digit += (what[1] >= 'A' ? ((what[1] & 0xdf) - 'A') + 10 : (what[1] - '0'));
-
-  return digit;
-}
-
-/**
- * Decode an urlencoded string
- *
- * @param string INOUT urlencoded string
- * @param len INOUT len of string
- * @param bottom IN bottom of allowed range
- * @param top IN top of allowed range
- *
- * @return APR_SUCCESS or APR_EINVAL
- */
-static apr_status_t parp_urldecode(parp_t *self, unsigned char *string) {
-  apr_status_t status;
-  unsigned char val;
-  long int i;
-
-  unsigned char *cur = string;
-  apr_size_t len = strlen(string);
-
-  if (!string) {
-    return APR_EINVAL;
-  }
-
-  status  = APR_SUCCESS;
-  i = 0;
-  while (i < len) {
-    if (string[i] == '%') {
-      /* need two bytes -> %xx */
-      if (i + 2 < len) {
-	char c1 = string[i + 1];
-	char c2 = string[i + 2];
-
-	/* check if this is a hex number */
-	if ( (((c1 >= '0')&&(c1 <= '9')) || ((c1 >= 'a')&&(c1 <= 'f')) ||
-	      ((c1 >= 'A')&&(c1 <= 'F')))
-	    && (((c2 >= '0')&&(c2 <= '9')) || ((c2 >= 'a')&&(c2 <= 'f')) ||
-		((c2 >= 'A')&&(c2 <= 'F'))) ) {
-	  val = parp_hex_2_char(&string[i + 1]);
-	  /* check range */
-	  if (val < self->range.from || val > self->range.to) {
-	    val = ' ';
-	    status = APR_EINVAL;
-	  }
-	  *cur++ = val;
-	  i += 3;
-	} else {
-	  *cur++ = '%';
-	  *cur++ = c1;
-	  *cur++ = c2;
-	  i += 3;
-	}
-      } else {
-	*cur++ = '%';
-	i++;
-
-	if (i + 1 < len) {
-	  *cur++ = string[i];
-	  i++;
-	}
-      }
-    }
-    else {
-      if (string[i] == '+') {
-	*cur++ = ' ';
-      } else {
-	*cur++ = string[i];
-      }
-
-      i++;
-    }
-  }
-
-  *cur = '\0';
-
-  return status;
-}
-/**
  * Urlencode parser
  *
  * @param self IN instance
@@ -208,30 +119,35 @@ static apr_status_t parp_urlencode(parp_t *self, const char *data,
   
   while (rest[0]) {
     pair = ap_getword(self->pool, &rest, '&');
+    /* get key/value */
     val = pair;
     key = ap_getword_nc(self->pool, &val, '=');
-    /* url decode key val */
-    if (!key) {
-      return APR_EINVAL;
-    }
-
-    if ((status = parp_urldecode(self, key)) == APR_SUCCESS) {
-      if (val) {
-        if ((status = parp_urldecode(self, val)) != APR_SUCCESS) {
-	  return status;
-        }
-      }
-      else {
-        val = apr_pstrdup(self->pool, "");
-      }
+    if (key) {
       /* store it to a table */
       apr_table_addn(self->params, key, val);
     }
-    else {
-      if (! self->flags & PARP_FLAGS_CONT_ON_ERR) {
-	return status;
-      }
-    }
+  }
+  
+  return APR_SUCCESS;
+}
+
+static apr_status_t parp_read_content_type(parp_t *self) {
+  const char *part;
+  const char *ct;
+  const char *key;
+  const char *val;
+ 
+  request_rec *r = self->r;
+  
+  ct = apr_table_get(r->headers_in, "Content-Type");
+  if (ct == NULL) {
+    return APR_EINVAL;
+  }
+
+  /* iterate over multipart key/value pairs */
+  while ((part = ap_getword(self->pool, &ct, ';'))) {
+    val = part;
+    key = ap_getword(self->pool, &val, '=');
   }
   
   return APR_SUCCESS;
@@ -250,7 +166,50 @@ static apr_status_t parp_urlencode(parp_t *self, const char *data,
  */
 static apr_status_t parp_multipart(parp_t *self, const char *data, 
                                    apr_size_t len) {
+  apr_status_t status;
+
+  if (!(status = parp_read_content_type(self))) {
+    return status;
+  }
+
+  /* now do all boundaries */
   return APR_SUCCESS;
+}
+
+/**
+ * Not implemented parser used if there is no corresponding parser found
+ *
+ * @param self IN instance
+ * @param data IN data with urlencoded content
+ * @param len IN len of data
+ *
+ * @return APR_ENOTIMPL
+ */
+static apr_status_t parp_not_impl(parp_t *self, const char *data, 
+                                  apr_size_t len) {
+  return APR_ENOTIMPL;
+}
+
+/**
+ * Get content type parser
+ *
+ * @param self IN instance
+ * @param ct IN content type (or NULL)
+ *
+ * @return content type parser
+ */
+static parp_parser_f parp_get_parser(parp_t *self, const char *ct) {
+  parp_parser_f parser = NULL;
+  
+  if (ct) {
+    parser = apr_hash_get(self->parsers, ct, APR_HASH_KEY_STRING);
+  }
+  if (parser) {
+    return parser;
+  }
+  else {
+    return parp_not_impl;
+  }
 }
 
 /**************************************************************************
@@ -263,16 +222,19 @@ static apr_status_t parp_multipart(parp_t *self, const char *data,
  *
  * @return new parameter parser instance
  */
-AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags,
-                              parp_byte_range_t range) {
+AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags) {
   parp_t *self = apr_pcalloc(r->pool, sizeof(parp_t));
 
   self->pool = r->pool;
   self->r = r;
   self->bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
   self->params = apr_table_make(r->pool, 5);
+  self->parsers = apr_hash_make(r->pool);
+  apr_hash_set(self->parsers, "application/x-www-form-urlencoded", 
+               APR_HASH_KEY_STRING, parp_urlencode);
+  apr_hash_set(self->parsers, "application/XXX-implementing", 
+               APR_HASH_KEY_STRING, parp_multipart);
   self->flags = flags;
-  self->range = range;
 
   return self;
 }
@@ -291,6 +253,7 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
   apr_status_t status;
   char *data;
   apr_size_t len;
+  parp_parser_f parser;
 
   request_rec *r = self->r;
   
@@ -315,7 +278,9 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
     else {
       data[len] = 0;
     }
-    if ((status = parp_urlencode(self, data, len)) != APR_SUCCESS) {
+    parser = parp_get_parser(self, apr_table_get(r->headers_in, 
+	                                         "Content-Type"));  
+    if ((status = parser(self, data, len)) != APR_SUCCESS) {
       return status;
     }
 

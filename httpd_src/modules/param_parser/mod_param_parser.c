@@ -77,9 +77,8 @@ static int parp_post_config(apr_pool_t * pconf, apr_pool_t * plog,
  */
 static int parp_access_checker(request_rec * r) {
   parp_t *parp;
-  parp_byte_range_t range = { 0, 255 };
 
-  parp = parp_new(r, PARP_FLAGS_NONE, range);
+  parp = parp_new(r, PARP_FLAGS_NONE);
   parp_read_params(parp);
 
   ap_set_module_config(r->request_config, &param_parser_module, parp); 
@@ -122,7 +121,7 @@ static int parp_handler(request_rec * r) {
   parp_get_params(parp, &tl);
   e = (apr_table_entry_t *) apr_table_elts(tl)->elts;
   for (i = 0; i < apr_table_elts(tl)->nelts; ++i) {
-    ap_rprintf(r, "%s = %s\n", e[i].key, e[i].val);
+    ap_rprintf(r, "recvd: %s = %s\n", e[i].key, e[i].val);
   }
 
   return OK;

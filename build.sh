@@ -2,5 +2,5 @@
 
 . ./include.sh
 
-cd Server/$HTTPD
+cd httpd 
 make

@@ -26,13 +26,7 @@ typedef struct parp_s parp_t;
 
 #define PARP_FLAGS_NONE 0
 #define PARP_FLAGS_CONT_ON_ERR 1
-typedef struct parp_byte_range_s {
-  unsigned char from;
-  unsigned char to;
-} parp_byte_range_t;
-
-AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags,
-                              parp_byte_range_t range);
+AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags);
 AP_DECLARE(apr_status_t) parp_read_params(parp_t *self);
 AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f, 
                                               apr_bucket_brigade * bb, 

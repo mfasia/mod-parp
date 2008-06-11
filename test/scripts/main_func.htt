@@ -2,12 +2,13 @@
 CLIENT
 # Simple GET
 _REQ localhost 16100 
-__GET /test/get?param1=value1&param2=value2&param3=value3%20foo HTTP/1.1
+__GET /test/get?param1=value1&param2=value2&param3=value3&param4& HTTP/1.1
 __Host: localhost
 __
 _EXPECT . "param1 = value1"
 _EXPECT . "param2 = value2"
-_EXPECT . "param3 = value3 foo"
+_EXPECT . "param3 = value3"
+_EXPECT . "param4 ="
 _WAIT
 
 # Simple POST
@@ -16,7 +17,37 @@ __Host: localhost
 __Content-Type: application/x-www-form-urlencoded
 __Content-Length: AUTO
 __
-__param1=value1&param2=value2&param3=value3%20foo
+__param1=value1&param2=value2&param3=value3&param4&
+_EXPECT . "param1 = value1"
+_EXPECT . "param2 = value2"
+_EXPECT . "param3 = value3"
+_EXPECT . "param4 ="
 _WAIT
+
+# POST with wrong content type
+__POST /test/get HTTP/1.1
+__Host: localhost
+__Content-Type: foo/bar 
+__Content-Length: AUTO
+__
+__param1=value1&param2=value2&param3=value3&param4&
+_EXPECT . "!param1"
+_EXPECT . "!param2"
+_EXPECT . "!param3"
+_EXPECT . "!param4"
+_WAIT
+
+# POST with no content type
+__POST /test/get HTTP/1.1
+__Host: localhost
+__Content-Length: AUTO
+__
+__param1=value1&param2=value2&param3=value3&param4&
+_EXPECT . "!param1"
+_EXPECT . "!param2"
+_EXPECT . "!param3"
+_EXPECT . "!param4"
+_WAIT
+
 END
 
