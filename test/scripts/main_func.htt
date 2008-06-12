@@ -56,8 +56,13 @@ __Content-Type: multipart/form-data; boundary=foo
 __Content-Length: AUTO
 __
 __--foo
-__foobar
+__foobar1
+__--foo
+__foobar2
+__--foo
+__foobar3
 __--foo--
+_WAIT
 
 END
 

@@ -33,13 +33,12 @@ struct parp_s {
   request_rec *r;
   apr_bucket_brigade *bb;
   apr_table_t *params;
-  apr_table_t *content_type;
   apr_hash_t *parsers;
   char *error; 
   int flags;
 };
 
-typedef apr_status_t (*parp_parser_f)(parp_t *, const char *, apr_size_t);
+typedef apr_status_t (*parp_parser_f)(parp_t *, char *, apr_size_t);
 
 /**
  * Read payload of this request
@@ -132,15 +131,25 @@ static apr_status_t parp_urlencode(parp_t *self, const char *data,
   return APR_SUCCESS;
 }
 
-static apr_status_t parp_read_content_type(parp_t *self) {
+/**
+ * read the content type contents
+ *
+ * @param self IN instance
+ * @param result OUT
+ *
+ * @return APR_SUCCESS or APR_EINVAL
+ */
+static apr_status_t parp_read_content_type(parp_t *self, apr_table_t **result) {
   const char *rest;
   const char *ct;
   const char *pair;
   const char *key;
   const char *val;
- 
+
+  apr_table_t *tl = apr_table_make(self->pool, 3);
   request_rec *r = self->r;
   
+  *result = tl;
   ct = apr_table_get(r->headers_in, "Content-Type");
   if (ct == NULL) {
     return APR_EINVAL;
@@ -158,11 +167,61 @@ static apr_status_t parp_read_content_type(parp_t *self) {
     val = pair;
     key = ap_getword(self->pool, &val, '=');
     if (key) {
-      apr_table_addn(self->content_type, key, val);
+      apr_table_addn(tl, key, val);
     }
   }
   
   return APR_SUCCESS;
+}
+
+/**
+ * read the all boundaries 
+ *
+ * @param self IN instance
+ * @param data IN data to parse
+ * @param len IN len of data
+ * @param tag IN boundary tag
+ * @param result OUT table of boundaries
+ *
+ * @return APR_SUCCESS or APR_EINVAL
+ */
+static apr_status_t parp_read_boundaries(parp_t *self, char *data, 
+                                         apr_size_t len, const char *tag,
+					 apr_table_t **result) {
+  apr_status_t status;
+  apr_size_t i;
+  apr_size_t start;
+  apr_size_t match;
+  apr_size_t tag_len;
+  apr_table_t *tl;
+  
+  tl = apr_table_make(self->pool, 5);
+  tag_len = strlen(tag);
+  for (i = 0, match = 0, start = 0; i < len; i++) {
+    /* test if match complete */
+    if (match == tag_len) {
+      /* prepare data */
+      data[i - match] = 0;
+      if (strncmp(&data[start], "\r\n", 2) == 0) {
+	start += 2;
+      }
+      else if (data[start] == '\n') {
+	start += 1;
+      }
+      /* got it, store it */
+      apr_table_addn(tl, tag, &data[start]);
+      start = i;
+    }
+    /* pattern matching */
+    if (match < tag_len && data[i] == tag[match]) {
+      ++match;
+    }
+    else {
+      match = 0;
+    }
+  }
+
+  return APR_EINVAL;
 }
 
 /**
@@ -176,17 +235,25 @@ static apr_status_t parp_read_content_type(parp_t *self) {
  *
  * @note: Get parp_get_error for more detailed report
  */
-static apr_status_t parp_multipart(parp_t *self, const char *data, 
-                                   apr_size_t len) {
+static apr_status_t parp_multipart(parp_t *self, char *data, apr_size_t len) {
   apr_status_t status;
   const char *boundary;
+  apr_table_t *ctt;
+  apr_table_t *bs;
 
-  if ((status = parp_read_content_type(self)) != APR_SUCCESS) {
+  if ((status = parp_read_content_type(self, &ctt)) != APR_SUCCESS) {
     return status;
   }
 
-  if (!(boundary = apr_table_get(self->content_type, "boundary"))) {
+  if (!(boundary = apr_table_get(ctt, "boundary"))) {
     return APR_EINVAL;
+  }
+  
+  /* prefix boundary wiht a -- */
+  boundary = apr_pstrcat(self->pool, "--", boundary, NULL);
+
+  if ((status = parp_read_boundaries(self, data, len, boundary, &bs)) != APR_SUCCESS) {
+    return status;
   }
   
   /* now do all boundaries */
@@ -202,8 +269,7 @@ static apr_status_t parp_multipart(parp_t *self, const char *data,
  *
  * @return APR_ENOTIMPL
  */
-static apr_status_t parp_not_impl(parp_t *self, const char *data, 
-                                  apr_size_t len) {
+static apr_status_t parp_not_impl(parp_t *self, char *data, apr_size_t len) {
   return APR_ENOTIMPL;
 }
 
@@ -253,7 +319,6 @@ AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags) {
   self->r = r;
   self->bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
   self->params = apr_table_make(r->pool, 5);
-  self->content_type = apr_table_make(r->pool, 3);
   self->parsers = apr_hash_make(r->pool);
   apr_hash_set(self->parsers, "application/x-www-form-urlencoded", 
                APR_HASH_KEY_STRING, parp_urlencode);
