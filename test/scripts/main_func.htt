@@ -56,7 +56,13 @@ __Content-Type: multipart/form-data; boundary=foo
 __Content-Length: AUTO
 __
 __--foo
-__foobar1
+__Content-Type: multipart/form-data; boundary=foo2
+__
+__--foo2
+__foobar11
+__--foo2
+__foobar12
+__--foo2--
 __--foo
 __foobar2
 __--foo

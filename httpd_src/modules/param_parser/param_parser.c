@@ -38,7 +38,8 @@ struct parp_s {
   int flags;
 };
 
-typedef apr_status_t (*parp_parser_f)(parp_t *, char *, apr_size_t);
+typedef apr_status_t (*parp_parser_f)(parp_t *, apr_table_t *, char *, 
+                                      apr_size_t);
 
 /**
  * Read payload of this request
@@ -98,48 +99,16 @@ static apr_status_t parp_get_payload(parp_t *self, char **data,
 }
 
 /**
- * Urlencode parser
- *
- * @param self IN instance
- * @param data IN data with urlencoded content
- * @param len IN len of data
- *
- * @return APR_SUCCESS or APR_EINVAL on parser error
- *
- * @note: Get parp_get_error for more detailed report
- */
-static apr_status_t parp_urlencode(parp_t *self, const char *data, 
-                                   apr_size_t len) {
-  apr_status_t status;
-  char *key;
-  char *val;
-  char *pair;
-
-  const char *rest = data;
-  
-  while (rest[0]) {
-    pair = ap_getword(self->pool, &rest, '&');
-    /* get key/value */
-    val = pair;
-    key = ap_getword_nc(self->pool, &val, '=');
-    if (key) {
-      /* store it to a table */
-      apr_table_addn(self->params, key, val);
-    }
-  }
-  
-  return APR_SUCCESS;
-}
-
-/**
  * read the content type contents
  *
  * @param self IN instance
+ * @param headers IN headers
  * @param result OUT
  *
  * @return APR_SUCCESS or APR_EINVAL
  */
-static apr_status_t parp_read_content_type(parp_t *self, apr_table_t **result) {
+static apr_status_t parp_read_content_type(parp_t *self, apr_table_t *headers, 
+                                           apr_table_t **result) {
   const char *rest;
   const char *ct;
   const char *pair;
@@ -147,10 +116,9 @@ static apr_status_t parp_read_content_type(parp_t *self, apr_table_t **result) {
   const char *val;
 
   apr_table_t *tl = apr_table_make(self->pool, 3);
-  request_rec *r = self->r;
   
   *result = tl;
-  ct = apr_table_get(r->headers_in, "Content-Type");
+  ct = apr_table_get(headers, "Content-Type");
   if (ct == NULL) {
     return APR_EINVAL;
   }
@@ -225,9 +193,26 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
 }
 
 /**
- * Multipart parser
+ * Get headers from data, all lines until first empty line will be 
+ * split into header/value stored in the headers table.
  *
  * @param self IN instance
+ * @param data IN data
+ * @param len IN len of data
+ * @param headers OUT found headers
+ *
+ * @return APR_SUCCESS or APR_EINVAL
+ */
+static apr_status_t parp_get_headers(parp_t *self, char *data, apr_size_t len,
+                                     apr_table_t **headers) {
+  return APR_EINVAL;
+}
+
+/**
+ * Urlencode parser
+ *
+ * @param self IN instance
+ * @param headers IN headers with additional data 
  * @param data IN data with urlencoded content
  * @param len IN len of data
  *
@@ -235,13 +220,53 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
  *
  * @note: Get parp_get_error for more detailed report
  */
-static apr_status_t parp_multipart(parp_t *self, char *data, apr_size_t len) {
+static apr_status_t parp_urlencode(parp_t *self, apr_table_t *headers,
+                                   const char *data, apr_size_t len) {
+  apr_status_t status;
+  char *key;
+  char *val;
+  char *pair;
+
+  const char *rest = data;
+  
+  while (rest[0]) {
+    pair = ap_getword(self->pool, &rest, '&');
+    /* get key/value */
+    val = pair;
+    key = ap_getword_nc(self->pool, &val, '=');
+    if (key) {
+      /* store it to a table */
+      apr_table_addn(self->params, key, val);
+    }
+  }
+  
+  return APR_SUCCESS;
+}
+
+/**
+ * Multipart parser
+ *
+ * @param self IN instance
+ * @param headers IN headers with additional data 
+ * @param data IN data
+ * @param len IN len of data
+ *
+ * @return APR_SUCCESS or APR_EINVAL on parser error
+ *
+ * @note: Get parp_get_error for more detailed report
+ */
+static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers, 
+                                   char *data, apr_size_t len) {
   apr_status_t status;
   const char *boundary;
   apr_table_t *ctt;
   apr_table_t *bs;
+  apr_table_entry_t *e;
+  int i;
 
-  if ((status = parp_read_content_type(self, &ctt)) != APR_SUCCESS) {
+  apr_table_t *hs = apr_table_make(self->pool, 3);
+  
+  if ((status = parp_read_content_type(self, headers, &ctt)) != APR_SUCCESS) {
     return status;
   }
 
@@ -256,6 +281,14 @@ static apr_status_t parp_multipart(parp_t *self, char *data, apr_size_t len) {
     return status;
   }
   
+  /* iterate over boundaries and store their param/value pairs */ 
+  e = (apr_table_entry_t *) apr_table_elts(bs)->elts;
+  for (i = 0; i < apr_table_elts(bs)->nelts; ++i) {
+    /* read boundary headers */
+    /* get content type */
+    /* call corresponding parser */
+  }
+    
   /* now do all boundaries */
   return APR_SUCCESS;
 }
@@ -264,12 +297,14 @@ static apr_status_t parp_multipart(parp_t *self, char *data, apr_size_t len) {
  * Not implemented parser used if there is no corresponding parser found
  *
  * @param self IN instance
+ * @param headers IN headers with additional data 
  * @param data IN data with urlencoded content
  * @param len IN len of data
  *
  * @return APR_ENOTIMPL
  */
-static apr_status_t parp_not_impl(parp_t *self, char *data, apr_size_t len) {
+static apr_status_t parp_not_impl(parp_t *self, apr_table_t *headers, 
+                                  char *data, apr_size_t len) {
   return APR_ENOTIMPL;
 }
 
@@ -349,7 +384,7 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
   
   if (r->method_number == M_POST) {
     if (r->args) {
-      if ((status = parp_urlencode(self, r->args, strlen(r->args))) 
+      if ((status = parp_urlencode(self, r->headers_in, r->args, strlen(r->args))) 
 	  != APR_SUCCESS) {
 	return status;
       }
@@ -370,14 +405,14 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
     }
     parser = parp_get_parser(self, apr_table_get(r->headers_in, 
 	                                         "Content-Type"));  
-    if ((status = parser(self, data, len)) != APR_SUCCESS) {
+    if ((status = parser(self, r->headers_in, data, len)) != APR_SUCCESS) {
       return status;
     }
 
   }
   else if (r->method_number == M_GET) {
     if (r->args) {
-      if ((status = parp_urlencode(self, r->args, strlen(r->args))) 
+      if ((status = parp_urlencode(self, r->headers_in, r->args, strlen(r->args))) 
 	  != APR_SUCCESS) {
 	return status;
       }
