@@ -164,6 +164,7 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
   apr_table_t *tl;
   
   tl = apr_table_make(self->pool, 5);
+  *result = tl;
   tag_len = strlen(tag);
   for (i = 0, match = 0, start = 0; i < len; i++) {
     /* test if match complete */
@@ -177,7 +178,9 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
 	start += 1;
       }
       /* got it, store it */
-      apr_table_addn(tl, tag, &data[start]);
+      if (data[start]) {
+	apr_table_addn(tl, tag, &data[start]);
+      }
       start = i;
     }
     /* pattern matching */
@@ -189,7 +192,7 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
     }
   }
 
-  return APR_EINVAL;
+  return APR_SUCCESS;
 }
 
 /**
@@ -203,8 +206,45 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
  *
  * @return APR_SUCCESS or APR_EINVAL
  */
-static apr_status_t parp_get_headers(parp_t *self, char *data, apr_size_t len,
+static apr_status_t parp_get_headers(parp_t *self, char **rdata, apr_size_t len,
                                      apr_table_t **headers) {
+  apr_size_t i;
+  apr_size_t start;
+  char *last;
+  char *key;
+  char *val;
+  char *data = *rdata;
+
+  apr_table_t *tl = apr_table_make(self->pool, 3);
+  *headers = tl;
+  
+  for (i = 0, start = 0; i < len; i++) {
+    if (((len - i) >= 2 && strncmp(&data[i], "\r\n", 2) == 0) ||
+	((len - i) == 1 && data[i] == '\n')) {
+      /* end of line reached */
+      data[i - 1] = 0;
+      if (strncmp(&data[i], "\r\n", 2) == 0) {
+	i += 1;
+      }
+      
+      /** finished */
+      if (!data[start]) {
+        *rdata = &data[i];
+	return APR_SUCCESS;
+      }
+      
+      /* split header name and value */
+      key = apr_strtok(&data[start], ":", &last); 
+      val = apr_strtok(NULL, ":", &last);
+      if (val) {
+	while (*val == ' ') ++val;
+      }
+      apr_table_addn(tl, key, val);
+
+      start = i;
+    }
+  }
+
   return APR_EINVAL;
 }
 
@@ -258,11 +298,13 @@ static apr_status_t parp_urlencode(parp_t *self, apr_table_t *headers,
 static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers, 
                                    char *data, apr_size_t len) {
   apr_status_t status;
+  apr_size_t val_len;
   const char *boundary;
   apr_table_t *ctt;
   apr_table_t *bs;
   apr_table_entry_t *e;
   int i;
+  char *bdata;
 
   apr_table_t *hs = apr_table_make(self->pool, 3);
   
@@ -285,6 +327,10 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
   e = (apr_table_entry_t *) apr_table_elts(bs)->elts;
   for (i = 0; i < apr_table_elts(bs)->nelts; ++i) {
     /* read boundary headers */
+    bdata = e[i].val;
+    if ((status = parp_get_headers(self, &bdata, strlen(bdata), &hs))) {
+      return status;
+    }
     /* get content type */
     /* call corresponding parser */
   }
