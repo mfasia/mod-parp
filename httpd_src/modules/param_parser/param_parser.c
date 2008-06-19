@@ -36,10 +36,13 @@ struct parp_s {
   apr_hash_t *parsers;
   char *error; 
   int flags;
+  int recursion;
 };
 
 typedef apr_status_t (*parp_parser_f)(parp_t *, apr_table_t *, char *, 
                                       apr_size_t);
+
+static parp_parser_f parp_get_parser(parp_t *self, const char *ct); 
 
 /**
  * Read payload of this request
@@ -107,37 +110,33 @@ static apr_status_t parp_get_payload(parp_t *self, char **data,
  *
  * @return APR_SUCCESS or APR_EINVAL
  */
-static apr_status_t parp_read_content_type(parp_t *self, apr_table_t *headers, 
-                                           apr_table_t **result) {
-  const char *rest;
-  const char *ct;
-  const char *pair;
-  const char *key;
-  const char *val;
+static apr_status_t parp_read_header(parp_t *self, const char *header, 
+                                     apr_table_t **result) {
+  char *pair;
+  char *key;
+  char *val;
+  char *last;
 
   apr_table_t *tl = apr_table_make(self->pool, 3);
   
   *result = tl;
-  ct = apr_table_get(headers, "Content-Type");
-  if (ct == NULL) {
-    return APR_EINVAL;
-  }
 
-  rest = ct;
   /* iterate over multipart key/value pairs */
-  while (rest[0]) {
-    pair = ap_getword(self->pool, &rest, ';');
+  pair = apr_strtok(apr_pstrdup(self->pool, header), ";,", &last);
+  if (!pair) {
+    return APR_SUCCESS;
+  }
+  do {
     /* eat spaces */
     while (*pair == ' ') {
       ++pair;
     }
     /* get key/value */
-    val = pair;
-    key = ap_getword(self->pool, &val, '=');
+    key = apr_strtok(pair, "=", &val);
     if (key) {
       apr_table_addn(tl, key, val);
     }
-  }
+  } while ((pair = apr_strtok(NULL, ";,", &last)));
   
   return APR_SUCCESS;
 }
@@ -302,13 +301,28 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
   const char *boundary;
   apr_table_t *ctt;
   apr_table_t *bs;
+  apr_table_t *ctds;
   apr_table_entry_t *e;
+  apr_table_entry_t *elem;
   int i;
   char *bdata;
-
+  const char *ctd;
+  const char *ct;
+  parp_parser_f parser;
   apr_table_t *hs = apr_table_make(self->pool, 3);
   
-  if ((status = parp_read_content_type(self, headers, &ctt)) != APR_SUCCESS) {
+  if (self->recursion > 3) {
+    return APR_EINVAL;
+  }
+
+  ++self->recursion;
+  
+  ct = apr_table_get(headers, "Content-Type");
+  if (ct == NULL) {
+    return APR_EINVAL;
+  }
+
+  if ((status = parp_read_header(self, ct, &ctt)) != APR_SUCCESS) {
     return status;
   }
 
@@ -331,8 +345,27 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
     if ((status = parp_get_headers(self, &bdata, strlen(bdata), &hs))) {
       return status;
     }
-    /* get content type */
-    /* call corresponding parser */
+
+    if ((ct = apr_table_get(hs, "Content-Type"))) {
+      parser = parp_get_parser(self, ct);
+      if ((status = parser(self, hs, bdata, strlen(bdata))) != APR_SUCCESS && 
+	  status != APR_ENOTIMPL) {
+	return status;
+      }
+    }
+    
+    if (!(ctd = apr_table_get(hs, "Content-Disposition"))) {
+      return APR_EINVAL;
+    }
+
+    if ((status = parp_read_header(self, ctd, &ctds)) != APR_SUCCESS) {
+      return status;
+    }
+
+    elem = (apr_table_entry_t *) apr_table_elts(ctds)->elts;
+    if (!ct) {
+    }
+    
   }
     
   /* now do all boundaries */
@@ -363,14 +396,13 @@ static apr_status_t parp_not_impl(parp_t *self, apr_table_t *headers,
  * @return content type parser
  */
 static parp_parser_f parp_get_parser(parp_t *self, const char *ct) {
-  const char *lct;
   const char *type;
+  char *last;
 
   parp_parser_f parser = NULL;
   
   if (ct) {
-    lct = ct;
-    type = ap_getword(self->pool, &lct, ';');
+    type = apr_strtok(apr_pstrdup(self->pool, ct), ";,", &last);
     if (type) {
       parser = apr_hash_get(self->parsers, type, APR_HASH_KEY_STRING);
     }
@@ -404,6 +436,8 @@ AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags) {
   apr_hash_set(self->parsers, "application/x-www-form-urlencoded", 
                APR_HASH_KEY_STRING, parp_urlencode);
   apr_hash_set(self->parsers, "multipart/form-data", 
+               APR_HASH_KEY_STRING, parp_multipart);
+  apr_hash_set(self->parsers, "multipart/mixed", 
                APR_HASH_KEY_STRING, parp_multipart);
   self->flags = flags;
 
