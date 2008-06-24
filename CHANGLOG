@@ -1,0 +1,4 @@
+Version 0.0.1
+  - Urlencrypted and multipart form data parser
+  - Supports recursive multipart boundaries (hard limited to a 2 recursions)
+
