@@ -116,6 +116,7 @@ static apr_status_t parp_read_header(parp_t *self, const char *header,
   char *key;
   char *val;
   char *last;
+  apr_size_t len;
 
   apr_table_t *tl = apr_table_make(self->pool, 3);
   
@@ -134,6 +135,14 @@ static apr_status_t parp_read_header(parp_t *self, const char *header,
     /* get key/value */
     key = apr_strtok(pair, "=", &val);
     if (key) {
+      /* strip " away */
+      if (val && val[0] == '"') {
+	++val;
+	len = strlen(val);
+	if (len > 0) {
+	  val[len - 1] = 0;
+	}
+      }
       apr_table_addn(tl, key, val);
     }
   } while ((pair = apr_strtok(NULL, ";,", &last)));
@@ -160,6 +169,7 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
   apr_size_t start;
   apr_size_t match;
   apr_size_t tag_len;
+  int incr;
   apr_table_t *tl;
   
   tl = apr_table_make(self->pool, 5);
@@ -168,18 +178,30 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
   for (i = 0, match = 0, start = 0; i < len; i++) {
     /* test if match complete */
     if (match == tag_len) {
+      if (strncmp(&data[i], "\r\n", 2) == 0) {
+	incr = 2;
+      }
+      else if (strncmp(&data[i], "--\r\n", 4) == 0) {
+	incr = 4;
+      }
+      else if (strcmp(&data[i], "--") == 0) {
+	incr = 2;
+      }
+      else if (data[i] == '\n') {
+	incr = 1;
+      }
+      else {
+	match = 0;
+	continue;
+      }
       /* prepare data */
       data[i - match] = 0;
-      if (strncmp(&data[start], "\r\n", 2) == 0) {
-	start += 2;
-      }
-      else if (data[start] == '\n') {
-	start += 1;
-      }
+
       /* got it, store it */
       if (data[start]) {
 	apr_table_addn(tl, tag, &data[start]);
       }
+      i += incr;
       start = i;
     }
     /* pattern matching */
@@ -210,6 +232,7 @@ static apr_status_t parp_get_headers(parp_t *self, char **rdata, apr_size_t len,
   apr_size_t i;
   apr_size_t start;
   char *last;
+  char *header;
   char *key;
   char *val;
   char *data = *rdata;
@@ -217,34 +240,31 @@ static apr_status_t parp_get_headers(parp_t *self, char **rdata, apr_size_t len,
   apr_table_t *tl = apr_table_make(self->pool, 3);
   *headers = tl;
   
-  for (i = 0, start = 0; i < len; i++) {
-    if (((len - i) >= 2 && strncmp(&data[i], "\r\n", 2) == 0) ||
-	((len - i) == 1 && data[i] == '\n')) {
-      /* end of line reached */
-      data[i - 1] = 0;
-      if (strncmp(&data[i], "\r\n", 2) == 0) {
-	i += 1;
-      }
-      
-      /** finished */
-      if (!data[start]) {
-        *rdata = &data[i];
-	return APR_SUCCESS;
-      }
-      
-      /* split header name and value */
-      key = apr_strtok(&data[start], ":", &last); 
-      val = apr_strtok(NULL, ":", &last);
-      if (val) {
-	while (*val == ' ') ++val;
-      }
-      apr_table_addn(tl, key, val);
-
-      start = i;
+  header = apr_strtok(data, "\r\n", &last);
+  while (header) {
+    key = apr_strtok(header, ":", &val);
+    if (val) {
+      while (*val == ' ') ++val;
     }
-  }
+    apr_table_addn(tl, key, val);
 
-  return APR_EINVAL;
+    if (*last == '\n') {
+      ++last;
+    }
+    /* look if we have a empty line in front */
+    if (strncmp(last, "\r\n", 2) == 0) {
+      ++last;
+      break;
+    }
+    header = apr_strtok(NULL, "\r\n", &last);
+  }
+  if (*last == '\n') {
+    ++last;
+  }
+  
+  *rdata = last;
+  
+  return APR_SUCCESS;
 }
 
 /**
@@ -308,6 +328,7 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
   char *bdata;
   const char *ctd;
   const char *ct;
+  const char *key;
   parp_parser_f parser;
   apr_table_t *hs = apr_table_make(self->pool, 3);
   
@@ -362,8 +383,23 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
       return status;
     }
 
-    elem = (apr_table_entry_t *) apr_table_elts(ctds)->elts;
     if (!ct) {
+      if ((key = apr_table_get(ctds, "name")) == NULL) {
+	return APR_EINVAL;
+      }
+      
+      val_len = strlen(bdata);
+      /* there must be a \r\n or at least a \n */
+      if (val_len >= 2 && strcmp(&bdata[val_len - 2], "\r\n") == 0) {
+	bdata[val_len - 2] = 0;
+      }
+      else if (val_len >= 1 && bdata[val_len - 1] == '\n') {
+	bdata[val_len - 1] = 0;
+      }
+      else {
+	return APR_EINVAL;
+      }
+      apr_table_add(self->params, key, bdata);
     }
     
   }

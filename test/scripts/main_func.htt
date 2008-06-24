@@ -56,22 +56,26 @@ __Content-Type: multipart/form-data; boundary=foo
 __Content-Length: AUTO
 __
 __--foo
-__header1: value1 
+__Content-Type: multipart/mixed; boundary=foo2
+__content-disposition: form-data; name="multi"
 __
-__foobar1
+__--foo2
+__content-disposition: form-data; name="paramA"
+__
+__valueA
+__--foo2--
 __--foo
-__header2: value2 
-__header22: value22 
+__content-disposition: form-data; name="param1"
 __
-__foobar2
+__value1
 __--foo
-__header3: value3 
-__header31: value31 
-__header32: value32 
-__header33: value33 
-__header34: value34 
+__content-disposition: form-data; name="param2"
 __
-__foobar3
+__value2
+__--foo
+__content-disposition: form-data; name="param3"
+__
+__value3
 __--foo--
 _WAIT
 
