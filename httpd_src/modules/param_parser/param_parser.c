@@ -98,7 +98,11 @@ static apr_status_t parp_get_payload(parp_t *self, char **data,
   } while (!seen_eos);
   
   
-  return apr_brigade_pflatten(self->bb, data, len, r->pool);
+  if ((status = apr_brigade_pflatten(self->bb, data, len, r->pool)) 
+      != APR_SUCCESS) {
+    self->error = apr_pstrdup(r->pool, "Input filter: apr_brigade_pflatten failed");
+  }
+  return status;
 }
 
 /**
@@ -333,6 +337,7 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
   apr_table_t *hs = apr_table_make(self->pool, 3);
   
   if (self->recursion > 3) {
+    self->error = apr_pstrdup(r->pool, "Too deep recursion of multiparts");
     return APR_EINVAL;
   }
 

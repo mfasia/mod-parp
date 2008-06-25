@@ -76,14 +76,16 @@ static int parp_post_config(apr_pool_t * pconf, apr_pool_t * plog,
  * @return DECLINED 
  */
 static int parp_access_checker(request_rec * r) {
+  apr_status_t status;
   parp_t *parp;
+  apr_table_t *tl;
 
   parp = parp_new(r, PARP_FLAGS_NONE);
-  parp_read_params(parp);
+  status = parp_read_params(parp);
 
   ap_set_module_config(r->request_config, &param_parser_module, parp); 
-  
-  return DECLINED;
+  parp_get_params(parp, &tl);
+  return parp_run_validate(r, tl, status, parp_get_error(parp));
 }
 
 /**
@@ -246,3 +248,23 @@ module AP_MODULE_DECLARE_DATA param_parser_module = {
   parp_config_cmds,                          /**< command table */
   parp_register_hooks,                       /**< hook registery */
 };
+
+APR_HOOK_STRUCT(
+  APR_HOOK_LINK(validate)
+)
+
+/**
+ * @param r IN request record
+ * @param params IN table of read parameter/values
+ * @param status IN status of parser may either be APR_SUCCESS, APR_EINVAL or
+ *                  APR_ENOTIMPL
+ * @param error IN error code of parser if stauts != APR_SUCCESS
+ * @return DECLINED or any return code you like
+ */
+APR_IMPLEMENT_EXTERNAL_HOOK_RUN_FIRST(parp, PARP, int, validate, 
+				      (request_rec *r, apr_table_t *params,
+				       apr_status_t status, const char *error), 
+				      (r, params, status, error), 
+				      DECLINED)
+
+

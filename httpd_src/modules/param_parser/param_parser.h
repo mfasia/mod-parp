@@ -36,6 +36,46 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
 AP_DECLARE(apr_status_t) parp_get_params(parp_t *self, apr_table_t **params);
 AP_DECLARE(const char *) parp_get_error(parp_t *self); 
 
+/**************************************************************************
+ * Hooks 
+ **************************************************************************/
+
+/* Create a set of PARP_DECLARE(type), PARP_DECLARE_NONSTD(type) and 
+ * PARP_DECLARE_DATA with appropriate export and import tags for the platform
+ */
+#if !defined(WIN32)
+#define PARP_DECLARE(type)            type
+#define PARP_DECLARE_NONSTD(type)     type
+#define PARP_DECLARE_DATA
+#elif defined(PARP_DECLARE_STATIC)
+#define PARP_DECLARE(type)            type __stdcall
+#define PARP_DECLARE_NONSTD(type)     type
+#define PARP_DECLARE_DATA
+#elif defined(PARP_DECLARE_EXPORT)
+#define PARP_DECLARE(type)            __declspec(dllexport) type __stdcall
+#define PARP_DECLARE_NONSTD(type)     __declspec(dllexport) type
+#define PARP_DECLARE_DATA             __declspec(dllexport)
+#else
+#define PARP_DECLARE(type)            __declspec(dllimport) type __stdcall
+#define PARP_DECLARE_NONSTD(type)     __declspec(dllimport) type
+#define PARP_DECLARE_DATA             __declspec(dllimport)
+#endif
+
+/**
+ * Hook an optional hgw hook.  Unlike static hooks, this uses a macro
+ * instead of a function.
+ */
+#define PARP_OPTIONAL_HOOK(name,fn,pre,succ,order) \
+        APR_OPTIONAL_HOOK(hgw,name,fn,pre,succ,order)
+/**
+ * The hooks do return DECLINED if not registered any hooks. Do return
+ * OK or HTTP_INTERNAL_SERVER_ERROR.  
+ */
+APR_DECLARE_EXTERNAL_HOOK(parp, PARP, int, validate, 
+			  (request_rec *r, apr_table_t *params,
+			   apr_status_t status, const char *error))
+
+
 #ifdef __cplusplus
 }
 #endif
