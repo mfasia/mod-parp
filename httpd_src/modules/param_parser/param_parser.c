@@ -337,7 +337,7 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
   apr_table_t *hs = apr_table_make(self->pool, 3);
   
   if (self->recursion > 3) {
-    self->error = apr_pstrdup(r->pool, "Too deep recursion of multiparts");
+    self->error = apr_pstrdup(self->pool, "Too deep recursion of multiparts");
     return APR_EINVAL;
   }
 

@@ -2,10 +2,10 @@
 CLIENT
 # Simple GET
 _REQ localhost 16100 
-__GET /test/get?param1=value1&param2=value2&param3=value3&param4& HTTP/1.1
+__GET /test/get?par%a?m1=val%00ue1&param2=value2&param3=value3&param4& HTTP/1.1
 __Host: localhost
 __
-_EXPECT . "param1 = value1"
+_EXPECT . "par%a\?m1 = val%00ue1"
 _EXPECT . "param2 = value2"
 _EXPECT . "param3 = value3"
 _EXPECT . "param4 ="
@@ -77,6 +77,10 @@ __content-disposition: form-data; name="param3"
 __
 __value3
 __--foo--
+_EXPECT . "paramA = valueA"
+_EXPECT . "param1 = value1"
+_EXPECT . "param2 = value2"
+_EXPECT . "param3 = value3"
 _WAIT
 
 END

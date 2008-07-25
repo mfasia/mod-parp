@@ -69,13 +69,13 @@ static int parp_post_config(apr_pool_t * pconf, apr_pool_t * plog,
 }
 
 /**
- * access checker hook.
+ * header parser hook.
  *
  * @param r IN request record
  *
  * @return DECLINED 
  */
-static int parp_access_checker(request_rec * r) {
+static int parp_header_parser(request_rec * r) {
   apr_status_t status;
   parp_t *parp;
   apr_table_t *tl;
@@ -228,7 +228,7 @@ static const command_rec parp_config_cmds[] = {
 static void parp_register_hooks(apr_pool_t * p) {
   /* register hooks */
   ap_hook_post_config(parp_post_config, NULL, NULL, APR_HOOK_LAST);
-  ap_hook_access_checker(parp_access_checker, NULL, NULL, APR_HOOK_LAST);
+  ap_hook_header_parser(parp_header_parser, NULL, NULL, APR_HOOK_LAST);
   ap_hook_handler(parp_handler, NULL, NULL, APR_HOOK_LAST);
   ap_hook_insert_filter(parp_insert_filter, NULL, NULL, APR_HOOK_LAST);
   ap_hook_insert_error_filter(parp_insert_filter, NULL, NULL, APR_HOOK_LAST);
