@@ -1,4 +1,4 @@
-./upack.sh
+./unpack.sh
 ./patch.sh
 ./configure.sh
 ./build.sh
