@@ -1,6 +1,4 @@
 TODO
 ----
-
-- Module with optional hooks for parsing
 - Store also type of parameter (form-data, attachment, ...)
 
