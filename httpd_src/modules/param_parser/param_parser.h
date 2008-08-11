@@ -5,7 +5,6 @@
 
 /**
  * @file
- * Header file for mod_http_1_1_gateway.c.
  * Exports used by other modules
  */
 
@@ -62,11 +61,11 @@ AP_DECLARE(const char *) parp_get_error(parp_t *self);
 #endif
 
 /**
- * Hook an optional hgw hook.  Unlike static hooks, this uses a macro
+ * Optional hook.  Unlike static hooks, this uses a macro
  * instead of a function.
  */
 #define PARP_OPTIONAL_HOOK(name,fn,pre,succ,order) \
-        APR_OPTIONAL_HOOK(hgw,name,fn,pre,succ,order)
+        APR_OPTIONAL_HOOK(parp,name,fn,pre,succ,order)
 /**
  * The hooks do return DECLINED if not registered any hooks. Do return
  * OK or HTTP_INTERNAL_SERVER_ERROR.  
