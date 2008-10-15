@@ -42,9 +42,24 @@ static const char g_revision[] = "0.1";
 #include <http_config.h>
 #include <http_log.h>
 
+/* apr */
+#include <apr_hooks.h>
+
+/* param parser */
+#include "param_parser.h"
+
 /* this */
 #include "mod_parp.h"
 
+APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(parp, PARP, apr_status_t, hp_hook,
+                                    (request_rec *r, parp_t *p),
+                                    (r, p),
+                                    OK, DECLINED)
+
+static int parp_header_parser(request_rec * r) {
+  //apr_status_t rv = parp_run_hp_hook(r, NULL);
+  return DECLINED;
+}
 
 static void *parp_srv_config_create(apr_pool_t *p, server_rec *s) {
   return NULL;
@@ -63,6 +78,7 @@ static const command_rec parp_config_cmds[] = {
  ***********************************************************************/
 static void parp_register_hooks(apr_pool_t * p) {
   static const char *pre[] = { "mod_setenvif.c", NULL };
+  ap_hook_header_parser(parp_header_parser, pre, NULL, APR_HOOK_MIDDLE);
 }
 
 /************************************************************************
