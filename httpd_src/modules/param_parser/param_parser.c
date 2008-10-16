@@ -3,8 +3,7 @@
  * and does not insert tabs
  */
 /* Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
+ * contributor license agreements. 
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
@@ -588,6 +587,11 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
 
   apr_off_t read = 0;
   parp_t *self = f->ctx;
+
+  if(self == NULL) {
+    /* nothing to do ... */
+    return ap_get_brigade(f->next, bb, mode, block, nbytes);
+  }
 
   /* do never send a bigger brigade than request with "nbytes"! */
   while (read < nbytes && !APR_BRIGADE_EMPTY(self->bb)) {
