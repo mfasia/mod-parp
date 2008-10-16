@@ -17,6 +17,8 @@
  * limitations under the License.
  */
 
+/* Copyright (C) 2008 Christian Liesch / Pascal Buchbinder */
+
 /*  ____  _____  ____ ____  
  * |H _ \(____ |/ ___)  _ \ 
  * |T|_| / ___ | |   | |_| |
