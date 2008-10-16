@@ -85,6 +85,17 @@ APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(parp, PARP, apr_status_t, hp_hook,
 /************************************************************************
  * handlers
  ***********************************************************************/
+
+/**
+ * Header parser starts body parsing when reading "parp" in
+ * the process environment or request notes and calls all
+ * functions  registered to the hs_hook.
+ *
+ * @param r IN request record
+ * @return DECLINED if inactive, return code of the registered
+ *         functions or the value defined by PARP_ExitOnError
+ *         on any parser error.
+ */
 static int parp_header_parser(request_rec * r) {
   const char *e;
   apr_status_t status = DECLINED;
@@ -106,8 +117,8 @@ static int parp_header_parser(request_rec * r) {
     apr_table_t *tl;
     parp_t *parp = parp_new(r, PARP_FLAGS_NONE);
     apr_status_t status = parp_read_params(parp);
+    ap_set_module_config(r->request_config, &parp_module, parp);
     if(status == APR_SUCCESS) {
-      ap_set_module_config(r->request_config, &parp_module, parp); 
       parp_get_params(parp, &tl);
       status = parp_run_hp_hook(r, tl);
     } else {
