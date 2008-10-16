@@ -97,7 +97,7 @@ static int parp_header_parser(request_rec * r) {
   if(e == NULL) {
     e = apr_table_get(r->subprocess_env, "parp");
   }
-  ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%d modules registered: %s",
+  ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%d modules registered, parser %s",
                 hs->nelts, e == NULL ? "off" : "on");
   if(e == NULL) {
     /* no event */
@@ -163,7 +163,8 @@ static const command_rec parp_config_cmds[] = {
   AP_INIT_TAKE1("PARP_ExitOnError", parp_error_code_cmd, NULL,
                 RSRC_CONF,
                 "PARP_ExitOnError <code>, defines the HTTP error code"
-                " to return on parsing errors. Default is off (= -1)."),
+                " to return on parsing errors. Default is off (= -1)"
+                " which mean that the server continues without an error."),
   { NULL }
 };
 
@@ -172,6 +173,7 @@ static const command_rec parp_config_cmds[] = {
  ***********************************************************************/
 static void parp_register_hooks(apr_pool_t * p) {
   static const char *pre[] = { "mod_setenvif.c", NULL };
+  /* header parser is invoked after mod_setenvif */
   ap_hook_header_parser(parp_header_parser, pre, NULL, APR_HOOK_MIDDLE);
   ap_hook_insert_filter(parp_insert_filter, NULL, NULL, APR_HOOK_LAST);
   ap_register_input_filter("parp-forward-filter", parp_forward_filter, NULL, AP_FTYPE_RESOURCE);
