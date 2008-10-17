@@ -17,8 +17,6 @@
  * limitations under the License.
  */
 
-/* Copyright (C) 2008 Christian Liesch / Pascal Buchbinder */
-
 /*  ____  _____  ____ ____  
  * |H _ \(____ |/ ___)  _ \ 
  * |T|_| / ___ | |   | |_| |
@@ -56,6 +54,7 @@ static const char g_revision[] = "0.1";
 /************************************************************************
  * defines
  ***********************************************************************/
+#define PARP_LOG_PFX(id)  "mod_parp("#id"): "
 
 /************************************************************************
  * structures
@@ -79,7 +78,7 @@ APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(parp, PARP, apr_status_t, hp_hook,
                                     OK, DECLINED)
 
 /************************************************************************
- * private functions
+ * functions
  ***********************************************************************/
 
 /************************************************************************
@@ -100,6 +99,7 @@ static int parp_header_parser(request_rec * r) {
   const char *e;
   apr_status_t status = DECLINED;
   apr_array_header_t *hs = apr_optional_hook_get("hp_hook");
+
   if((hs == NULL) || (hs->nelts == 0)) {
     /* no module has registerd */
     return DECLINED;
@@ -108,8 +108,10 @@ static int parp_header_parser(request_rec * r) {
   if(e == NULL) {
     e = apr_table_get(r->subprocess_env, "parp");
   }
-  ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%d modules registered, parser %s",
+  ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                PARP_LOG_PFX(000)"%d modules registered, parser %s",
                 hs->nelts, e == NULL ? "off" : "on");
+
   if(e == NULL) {
     /* no event */
     return DECLINED;
@@ -118,29 +120,34 @@ static int parp_header_parser(request_rec * r) {
     parp_t *parp = parp_new(r, PARP_FLAGS_NONE);
     apr_status_t status = parp_read_params(parp);
     ap_set_module_config(r->request_config, &parp_module, parp);
+    ap_add_input_filter("parp-forward-filter", parp, r, r->connection);
     if(status == APR_SUCCESS) {
       parp_get_params(parp, &tl);
       status = parp_run_hp_hook(r, tl);
     } else {
       parp_srv_config *sconf = (parp_srv_config*)ap_get_module_config(r->server->module_config,
                                                                       &parp_module);
-      if(sconf->onerror == -1) {
+      if(sconf->onerror == 200) {
         return DECLINED;
       }
-      status = sconf->onerror;
+      if(sconf->onerror == -1) {
+        status = HTTP_INTERNAL_SERVER_ERROR;
+      } else {
+        status = sconf->onerror;
+      }
     }
   }
   return status;
 }
 
-static void parp_insert_filter(request_rec * r) {
-  parp_t *parp = ap_get_module_config(r->request_config, &parp_module);
-  ap_add_input_filter("parp-forward-filter", parp, r, r->connection);
-}
+//$$$static void parp_insert_filter(request_rec * r) {
+//  parp_t *parp = ap_get_module_config(r->request_config, &parp_module);
+//  ap_add_input_filter("parp-forward-filter", parp, r, r->connection);
+//}
 
 static void *parp_srv_config_create(apr_pool_t *p, server_rec *s) {
   parp_srv_config *sconf = apr_pcalloc(p, sizeof(parp_srv_config));
-  sconf->onerror = -1;
+  sconf->onerror = -1; /* -1 is handles same as 500 but is the default (used for merger) */
   return sconf;
 }
 
@@ -160,7 +167,7 @@ const char *parp_error_code_cmd(cmd_parms *cmd, void *dcfg, const char *arg) {
   parp_srv_config *sconf = (parp_srv_config*)ap_get_module_config(cmd->server->module_config,
                                                                   &parp_module);
   sconf->onerror  = atoi(arg);
-  if(sconf->onerror == -1) {
+  if(sconf->onerror == 200) {
     return NULL;
   }
   if((sconf->onerror < 400) || (sconf->onerror > 599)) {
@@ -174,8 +181,8 @@ static const command_rec parp_config_cmds[] = {
   AP_INIT_TAKE1("PARP_ExitOnError", parp_error_code_cmd, NULL,
                 RSRC_CONF,
                 "PARP_ExitOnError <code>, defines the HTTP error code"
-                " to return on parsing errors. Default is off (= -1)"
-                " which mean that the server continues without an error."),
+                " to return on parsing errors. Default is 500."
+                " Specify 200 in order to ignore errors."),
   { NULL }
 };
 
@@ -186,7 +193,7 @@ static void parp_register_hooks(apr_pool_t * p) {
   static const char *pre[] = { "mod_setenvif.c", NULL };
   /* header parser is invoked after mod_setenvif */
   ap_hook_header_parser(parp_header_parser, pre, NULL, APR_HOOK_MIDDLE);
-  ap_hook_insert_filter(parp_insert_filter, NULL, NULL, APR_HOOK_LAST);
+  //$$$ap_hook_insert_filter(parp_insert_filter, NULL, NULL, APR_HOOK_LAST);
   ap_register_input_filter("parp-forward-filter", parp_forward_filter, NULL, AP_FTYPE_RESOURCE);
 }
 

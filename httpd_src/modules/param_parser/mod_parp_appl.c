@@ -47,14 +47,71 @@ static const char g_revision[] = "0.1";
 /* param parser module */
 #include "mod_parp.h"
 
-static apr_status_t parp_appl_test(request_rec * r, apr_table_t *table) {
+/************************************************************************
+ * defines
+ ***********************************************************************/
+#define PARPA_LOG_PFX(id)  "mod_parp_appl("#id"): "
+
+/************************************************************************
+ * globals
+ ***********************************************************************/
+module AP_MODULE_DECLARE_DATA parp_appl_module;
+
+/************************************************************************
+ * functions
+ ***********************************************************************/
+static apr_status_t parp_appl_test(request_rec *r, apr_table_t *table) {
+  ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                PARPA_LOG_PFX(000)"parp header parser hook implementation");
+  ap_set_module_config(r->request_config, &parp_appl_module, table);
   return DECLINED;
+}
+
+/************************************************************************
+ * handlers
+ ***********************************************************************/
+static int parp_appl_handler(request_rec * r) {
+  apr_table_t *tl = ap_get_module_config(r->request_config, &parp_appl_module);
+
+  /* We decline to handle a request if parp-test-handler is not the value
+   * of r->handler 
+   */
+  if (strcmp(r->handler, "parp-test-handler")) {
+    return DECLINED;
+  }
+
+  /* We set the content type before doing anything else */
+  ap_set_content_type(r, "text/plain");
+
+  /* If the request is for a header only, and not a request for
+   * the whole content, then return OK now. We don't have to do
+   * anything else. 
+   */
+  if (r->header_only) {
+    return OK;
+  }
+
+  if(tl) {
+    int i;
+    apr_table_entry_t *e = (apr_table_entry_t *) apr_table_elts(tl)->elts;
+    for (i = 0; i < apr_table_elts(tl)->nelts; ++i) {
+      ap_rprintf(r, "recvd: %s = %s\n", e[i].key, e[i].val);
+    }
+  }
+
+  return OK;
 }
 
 static int parp_appl_post_read_request(request_rec * r) {
+  ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                PARPA_LOG_PFX(000)"prr, enable parp");
+  apr_table_set(r->notes, "parp", "on");
   return DECLINED;
 }
 
+/************************************************************************
+ * directiv handlers 
+ ***********************************************************************/
 static void *parp_appl_srv_config_create(apr_pool_t *p, server_rec *s) {
   return NULL;
 }
@@ -73,6 +130,7 @@ static const command_rec parp_appl_config_cmds[] = {
 static void parp_appl_register_hooks(apr_pool_t * p) {
   static const char *pre[] = { "mod_setenvif.c", NULL };
   ap_hook_post_read_request(parp_appl_post_read_request, pre, NULL, APR_HOOK_LAST);
+  ap_hook_handler(parp_appl_handler, NULL, NULL, APR_HOOK_LAST);
   APR_OPTIONAL_HOOK(parp, hp_hook, parp_appl_test, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
