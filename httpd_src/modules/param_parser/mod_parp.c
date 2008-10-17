@@ -140,11 +140,6 @@ static int parp_header_parser(request_rec * r) {
   return status;
 }
 
-//$$$static void parp_insert_filter(request_rec * r) {
-//  parp_t *parp = ap_get_module_config(r->request_config, &parp_module);
-//  ap_add_input_filter("parp-forward-filter", parp, r, r->connection);
-//}
-
 static void *parp_srv_config_create(apr_pool_t *p, server_rec *s) {
   parp_srv_config *sconf = apr_pcalloc(p, sizeof(parp_srv_config));
   sconf->onerror = -1; /* -1 is handles same as 500 but is the default (used for merger) */
@@ -193,7 +188,6 @@ static void parp_register_hooks(apr_pool_t * p) {
   static const char *pre[] = { "mod_setenvif.c", NULL };
   /* header parser is invoked after mod_setenvif */
   ap_hook_header_parser(parp_header_parser, pre, NULL, APR_HOOK_MIDDLE);
-  //$$$ap_hook_insert_filter(parp_insert_filter, NULL, NULL, APR_HOOK_LAST);
   ap_register_input_filter("parp-forward-filter", parp_forward_filter, NULL, AP_FTYPE_RESOURCE);
 }
 

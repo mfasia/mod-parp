@@ -60,6 +60,12 @@ module AP_MODULE_DECLARE_DATA parp_appl_module;
 /************************************************************************
  * functions
  ***********************************************************************/
+
+/**
+ * This is the function which has been registered to mod_parp's header
+ * parser. It receives a table with all parameter received from the client
+ * (either body or query).
+ */
 static apr_status_t parp_appl_test(request_rec *r, apr_table_t *table) {
   ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
                 PARPA_LOG_PFX(000)"parp header parser hook implementation");
@@ -70,6 +76,13 @@ static apr_status_t parp_appl_test(request_rec *r, apr_table_t *table) {
 /************************************************************************
  * handlers
  ***********************************************************************/
+
+/**
+ * The test handler writes all parameter to the response body
+ * in order to be verified the by the test program.
+ * See also http://htt.sourceforge.net about smart web application
+ * testing.
+ */
 static int parp_appl_handler(request_rec * r) {
   apr_table_t *tl = ap_get_module_config(r->request_config, &parp_appl_module);
 
@@ -95,13 +108,19 @@ static int parp_appl_handler(request_rec * r) {
     int i;
     apr_table_entry_t *e = (apr_table_entry_t *) apr_table_elts(tl)->elts;
     for (i = 0; i < apr_table_elts(tl)->nelts; ++i) {
-      ap_rprintf(r, "recvd: %s = %s\n", e[i].key, e[i].val);
+      ap_rprintf(r, "recvd: %s = %s\n",
+                 ap_escape_html(r->pool, e[i].key),
+                 ap_escape_html(r->pool, e[i].val));
     }
   }
 
   return OK;
 }
 
+/**
+ * This module implements a handler which actiates mod_parp.
+ * We could do this using mod_setenvif alternatively.
+ */
 static int parp_appl_post_read_request(request_rec * r) {
   ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
                 PARPA_LOG_PFX(000)"prr, enable parp");
