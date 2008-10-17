@@ -2,7 +2,7 @@
 
 . ./include.sh
 
-MODULE=param_parser
+MODULE=parp
 
 cd httpd/modules
 if [ ! -d $MODULE ]; then
