@@ -1,4 +1,4 @@
-APACHE_MODPATH_INIT(param_parser)
+APACHE_MODPATH_INIT(parp)
 
 parp_objs="dnl
 param_parser.lo dnl
