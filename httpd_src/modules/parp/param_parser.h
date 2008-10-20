@@ -43,6 +43,17 @@ extern "C" {
 /**************************************************************************
  * Public 
  **************************************************************************/
+struct parp_s {
+  apr_pool_t *pool;
+  request_rec *r;
+  apr_bucket_brigade *bb;
+  apr_table_t *params;
+  apr_hash_t *parsers;
+  char *error; 
+  int flags;
+  int recursion;
+};
+
 typedef struct parp_s parp_t;
 
 #define PARP_FLAGS_NONE 0
@@ -55,7 +66,7 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
 					      apr_read_type_e block, 
 					      apr_off_t nbytes); 
 AP_DECLARE(apr_status_t) parp_get_params(parp_t *self, apr_table_t **params);
-AP_DECLARE(const char *) parp_get_error(parp_t *self); 
+AP_DECLARE(char *) parp_get_error(parp_t *self); 
 
 /**************************************************************************
  * Hooks 

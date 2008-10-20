@@ -44,6 +44,8 @@ static const char g_revision[] = "0.1";
 /* apr */
 #include <apr_hooks.h>
 #include <apr_strings.h>
+#include <apr_buckets.h>
+#include <apr_hash.h>
 
 /* param parser */
 #include "param_parser.h"
@@ -118,7 +120,7 @@ static int parp_header_parser(request_rec * r) {
   } else {
     apr_table_t *tl;
     parp_t *parp = parp_new(r, PARP_FLAGS_NONE);
-    apr_status_t status = parp_read_params(parp);
+    status = parp_read_params(parp);
     ap_set_module_config(r->request_config, &parp_module, parp);
     ap_add_input_filter("parp-forward-filter", parp, r, r->connection);
     if(status == APR_SUCCESS) {
@@ -127,6 +129,11 @@ static int parp_header_parser(request_rec * r) {
     } else {
       parp_srv_config *sconf = (parp_srv_config*)ap_get_module_config(r->server->module_config,
                                                                       &parp_module);
+      char *error = parp_get_error(parp);
+      ap_log_rerror(APLOG_MARK, sconf->onerror == 200 ? APLOG_WARNING : APLOG_ERR, 0, r,
+                    PARP_LOG_PFX(010)"parser error, rc=%d (%s)",
+                    sconf->onerror == -1 ? 500 : sconf->onerror,
+                    error == NULL ? "-" : error);
       if(sconf->onerror == 200) {
         return DECLINED;
       }

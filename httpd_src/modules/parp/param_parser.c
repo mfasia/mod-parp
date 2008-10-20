@@ -50,16 +50,6 @@
 /**************************************************************************
  * Private 
  **************************************************************************/
-struct parp_s {
-  apr_pool_t *pool;
-  request_rec *r;
-  apr_bucket_brigade *bb;
-  apr_table_t *params;
-  apr_hash_t *parsers;
-  char *error; 
-  int flags;
-  int recursion;
-};
 
 typedef apr_status_t (*parp_parser_f)(parp_t *, apr_table_t *, char *, 
                                       apr_size_t);
@@ -367,6 +357,7 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
   
   ct = apr_table_get(headers, "Content-Type");
   if (ct == NULL) {
+    self->error = apr_pstrdup(self->pool, "No content type available");
     return APR_EINVAL;
   }
 
@@ -642,7 +633,7 @@ AP_DECLARE(apr_status_t) parp_get_params(parp_t *self, apr_table_t **params) {
  *
  * @return error message, empty message or NULL if instance not valid
  */
-AP_DECLARE(const char *) parp_get_error(parp_t *self) {
+AP_DECLARE(char *) parp_get_error(parp_t *self) {
   if (self && self->error) {
     return apr_pstrdup(self->pool, self->error);
   }
