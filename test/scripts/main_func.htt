@@ -6,10 +6,10 @@ __GET /test/get/1?par%a?m1=val%00ue1&param2=value2&param3=value3&param4& HTTP/1.
 __Host: localhost
 __
 _EXPECT . "200 OK"
-_EXPECT . "par%a\?m1 = val%00ue1"
-_EXPECT . "param2 = value2"
-_EXPECT . "param3 = value3"
-_EXPECT . "param4 ="
+_EXPECT . "recvd: par%a\?m1 = val%00ue1"
+_EXPECT . "recvd: param2 = value2"
+_EXPECT . "recvd: param3 = value3"
+_EXPECT . "recvd: param4 ="
 _WAIT
 
 # Simple POST
@@ -21,10 +21,10 @@ __Content-Length: AUTO
 __
 __param1=value1&param2=value2&param3=value3&param4&
 _EXPECT . "200 OK"
-_EXPECT . "param1 = value1"
-_EXPECT . "param2 = value2"
-_EXPECT . "param3 = value3"
-_EXPECT . "param4 ="
+_EXPECT . "recvd: param1 = value1"
+_EXPECT . "recvd: param2 = value2"
+_EXPECT . "recvd: param3 = value3"
+_EXPECT . "recvd: param4 ="
 _WAIT
 
 # POST with wrong content type
@@ -88,10 +88,10 @@ __
 __value3
 __--foo--
 _EXPECT . "200 OK"
-_EXPECT . "paramA = valueA"
-_EXPECT . "param1 = value1"
-_EXPECT . "param2 = value2"
-_EXPECT . "param3 = value3"
+_EXPECT . "recvd: paramA = valueA"
+_EXPECT . "recvd: param1 = value1"
+_EXPECT . "recvd: param2 = value2"
+_EXPECT . "recvd: param3 = value3"
 _WAIT
 
 END

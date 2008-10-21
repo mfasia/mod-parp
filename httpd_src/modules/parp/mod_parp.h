@@ -55,5 +55,6 @@
 APR_DECLARE_EXTERNAL_HOOK(parp, PARP, apr_status_t, hp_hook,
                           (request_rec *r, apr_table_t *table))
 
+APR_DECLARE_OPTIONAL_FN(apr_table_t *, parp_hp_table, (request_rec *));
 
 #endif /* __MOD_PARP_H__ */

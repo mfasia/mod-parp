@@ -82,6 +82,14 @@ APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(parp, PARP, apr_status_t, hp_hook,
 /************************************************************************
  * functions
  ***********************************************************************/
+static apr_table_t *parp_hp_table(request_rec *r) {
+  parp_t *parp = ap_get_module_config(r->request_config, &parp_module);
+  apr_table_t *tl = NULL;
+  if(parp) {
+    parp_get_params(parp, &tl);
+  }
+  return tl;
+}  
 
 /************************************************************************
  * handlers
@@ -98,22 +106,11 @@ APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(parp, PARP, apr_status_t, hp_hook,
  *         on any parser error.
  */
 static int parp_header_parser(request_rec * r) {
-  const char *e;
   apr_status_t status = DECLINED;
-  apr_array_header_t *hs = apr_optional_hook_get("hp_hook");
-
-  if((hs == NULL) || (hs->nelts == 0)) {
-    /* no module has registerd */
-    return DECLINED;
-  }
-  e = apr_table_get(r->notes, "parp");
+  const char *e = apr_table_get(r->notes, "parp");
   if(e == NULL) {
     e = apr_table_get(r->subprocess_env, "parp");
   }
-  ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                PARP_LOG_PFX(000)"%d modules registered, parser %s",
-                hs->nelts, e == NULL ? "off" : "on");
-
   if(e == NULL) {
     /* no event */
     return DECLINED;
@@ -198,6 +195,7 @@ static void parp_register_hooks(apr_pool_t * p) {
   /* header parser is invoked after mod_setenvif */
   ap_hook_header_parser(parp_header_parser, pre, NULL, APR_HOOK_MIDDLE);
   ap_register_input_filter("parp-forward-filter", parp_forward_filter, NULL, AP_FTYPE_RESOURCE);
+  APR_REGISTER_OPTIONAL_FN(parp_hp_table);
 }
 
 /************************************************************************

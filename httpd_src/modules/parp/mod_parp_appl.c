@@ -57,9 +57,16 @@ static const char g_revision[] = "0.1";
  ***********************************************************************/
 module AP_MODULE_DECLARE_DATA parp_appl_module;
 
+
 /************************************************************************
  * functions
  ***********************************************************************/
+
+/**
+ * The parameter may be access via the optional function parp_hp_table()
+ */
+extern module AP_MODULE_DECLARE_DATA parp_module;
+static APR_OPTIONAL_FN_TYPE(parp_hp_table) *parp_appl_hp_table = NULL;
 
 /**
  * This is the function which has been registered to mod_parp's header
@@ -109,6 +116,21 @@ static int parp_appl_handler(request_rec * r) {
     apr_table_entry_t *e = (apr_table_entry_t *) apr_table_elts(tl)->elts;
     for (i = 0; i < apr_table_elts(tl)->nelts; ++i) {
       ap_rprintf(r, "recvd: %s = %s\n",
+                 ap_escape_html(r->pool, e[i].key),
+                 ap_escape_html(r->pool, e[i].val));
+    }
+  }
+
+  /*
+   * Access the parameter using the optional function
+   */
+  parp_appl_hp_table = APR_RETRIEVE_OPTIONAL_FN(parp_hp_table);
+  tl = parp_appl_hp_table(r);
+  if(tl) {
+    int i;
+    apr_table_entry_t *e = (apr_table_entry_t *) apr_table_elts(tl)->elts;
+    for (i = 0; i < apr_table_elts(tl)->nelts; ++i) {
+      ap_rprintf(r, "of: %s = %s\n",
                  ap_escape_html(r->pool, e[i].key),
                  ap_escape_html(r->pool, e[i].val));
     }
