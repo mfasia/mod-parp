@@ -465,6 +465,7 @@ static parp_parser_f parp_get_parser(parp_t *self, const char *ct) {
     return parser;
   }
   else {
+    self->error = apr_pstrdup(self->pool, "No parser available for this content type");
     return parp_not_impl;
   }
 }
