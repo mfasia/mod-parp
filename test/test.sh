@@ -6,7 +6,7 @@ ERRORS=0
 WARNINGS=0
 
 ./ctl.sh start
-ps -Ao vsz,comm,pid,ppid | grep `cat Server/logs/pid` | sort -n | tail -1 | awk '{print $1 " " $3}'
+#ps -Ao vsz,comm,pid,ppid | grep `cat Server/logs/pid` | sort -n | tail -1 | awk '{print $1 " " $3}'
 
 ./htt.sh -s scripts/main_func.htt
 if [ $? -ne 0 ]; then
@@ -23,16 +23,21 @@ if [ $? -ne 0 ]; then
     ERRORS=`expr $ERRORS + 1`
     echo "FAILED file.htt"
 fi
-for E in `seq 7`; do
-ps -Ao vsz,comm,pid,ppid | grep `cat Server/logs/pid` | sort -n | tail -1 | awk '{print $1 " " $3}'
 ./htt.sh -s scripts/big.htt
 if [ $? -ne 0 ]; then
     ERRORS=`expr $ERRORS + 1`
     echo "FAILED big.htt"
 fi
-done
-
-ps -Ao vsz,comm,pid,ppid | grep `cat Server/logs/pid` | sort -n | tail -1 | awk '{print $1 " " $3}'
+#for E in `seq 7`; do
+#ps -Ao vsz,comm,pid,ppid | grep `cat Server/logs/pid` | sort -n | tail -1 | awk '{print $1 " " $3}'
+#./htt.sh -s scripts/big.htt
+#if [ $? -ne 0 ]; then
+#    ERRORS=`expr $ERRORS + 1`
+#    echo "FAILED big.htt"
+#fi
+#done
+#
+#ps -Ao vsz,comm,pid,ppid | grep `cat Server/logs/pid` | sort -n | tail -1 | awk '{print $1 " " $3}'
 ./ctl.sh stop
 
 if [ $WARNINGS -ne 0 ]; then
