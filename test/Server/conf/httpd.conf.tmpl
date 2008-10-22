@@ -47,6 +47,13 @@ Listen          localhost:16100
    ServerName localhost
    ServerAdmin webmaster@localhost
 
+   ScriptAlias /cgi/ ##SERVER_ROOT##/htdocs/cgi/
+   <Location /cgi>
+       Options ExecCGI -MultiViews +SymLinksIfOwnerMatch
+       Order allow,deny
+       Allow from all
+   </Location>
+
    <Location /test>
      SetHandler parp-test-handler
    </Location>
