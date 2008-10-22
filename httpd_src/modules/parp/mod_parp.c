@@ -117,6 +117,8 @@ static int parp_header_parser(request_rec * r) {
   } else {
     apr_table_t *tl;
     parp_t *parp = parp_new(r, PARP_FLAGS_NONE);
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                  PARP_LOG_PFX(000)"enabled (%s)", e);
 
     status = parp_read_params(parp);
     ap_set_module_config(r->request_config, &parp_module, parp);

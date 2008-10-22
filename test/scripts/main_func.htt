@@ -10,6 +10,10 @@ _EXPECT . "recvd: par%a\?m1 = val%00ue1"
 _EXPECT . "recvd: param2 = value2"
 _EXPECT . "recvd: param3 = value3"
 _EXPECT . "recvd: param4 ="
+_EXPECT . "of: par%a\?m1 = val%00ue1"
+_EXPECT . "of: param2 = value2"
+_EXPECT . "of: param3 = value3"
+_EXPECT . "of: param4 ="
 _WAIT
 
 # Simple POST
@@ -25,6 +29,10 @@ _EXPECT . "recvd: param1 = value1"
 _EXPECT . "recvd: param2 = value2"
 _EXPECT . "recvd: param3 = value3"
 _EXPECT . "recvd: param4 ="
+_EXPECT . "of: param1 = value1"
+_EXPECT . "of: param2 = value2"
+_EXPECT . "of: param3 = value3"
+_EXPECT . "of: param4 ="
 _WAIT
 
 # POST with wrong content type
@@ -60,7 +68,7 @@ _CLOSE
 
 # POST multipart data
 _REQ localhost 16100
-__POST /test/post/5 HTTP/1.1
+__POST /test/post/5?param4=value4 HTTP/1.1
 __Host: localhost
 __Content-Type: multipart/form-data; boundary=foo
 __Content-Length: AUTO
@@ -92,7 +100,20 @@ _EXPECT . "recvd: paramA = valueA"
 _EXPECT . "recvd: param1 = value1"
 _EXPECT . "recvd: param2 = value2"
 _EXPECT . "recvd: param3 = value3"
+_EXPECT . "recvd: param4 = value4"
+_EXPECT . "of: paramA = valueA"
+_EXPECT . "of: param1 = value1"
+_EXPECT . "of: param2 = value2"
+_EXPECT . "of: param3 = value3"
+_EXPECT . "of: param4 = value4"
+_WAIT
+
+# Simple GET
+_REQ localhost 16100
+__GET /test/get/6 HTTP/1.1
+__Host: localhost
+__
+_EXPECT . "200 OK"
 _WAIT
 
 END
-
