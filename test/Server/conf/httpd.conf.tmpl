@@ -46,7 +46,9 @@ Listen          localhost:16100
 <VirtualHost localhost:16100>
    ServerName localhost
    ServerAdmin webmaster@localhost
-
+   <IfDefine noerror>
+   PARP_ExitOnError 200
+   </IfDefine>
    ScriptAlias /cgi/ ##SERVER_ROOT##/htdocs/cgi/
    <Location /cgi>
        Options ExecCGI -MultiViews +SymLinksIfOwnerMatch

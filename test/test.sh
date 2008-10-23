@@ -39,6 +39,14 @@ fi
 #
 #ps -Ao vsz,comm,pid,ppid | grep `cat Server/logs/pid` | sort -n | tail -1 | awk '{print $1 " " $3}'
 ./ctl.sh stop
+./ctl.sh start -D noerror
+sleep 1
+./htt.sh -s scripts/error.htt
+if [ $? -ne 0 ]; then
+    ERRORS=`expr $ERRORS + 1`
+    echo "FAILED error.htt"
+fi
+./ctl.sh stop
 
 if [ $WARNINGS -ne 0 ]; then
     echo "ERROR: got $WARNINGS warnings"
