@@ -4,7 +4,7 @@
 
 cd $HTTPD
 ./buildconf
-CFLAGS="-g" ./configure \
+CFLAGS="-g -Wall" ./configure \
   --prefix=$HOME/local \
   --enable-so \
   --enable-static-support \

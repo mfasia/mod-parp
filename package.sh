@@ -31,12 +31,14 @@ mkdir -p mod_parp-${VERSION}/apache2
 
 echo "install documentation"
 #cp doc/README.TXT mod_parp-${VERSION}
-#cp doc/LICENSE.txt mod_parp-${VERSION}/doc
+cp doc/LICENSE.txt mod_parp-${VERSION}/doc
 #cp doc/CHANGES.txt mod_parp-${VERSION}/doc
 sed <doc/index.html >mod_parp-${VERSION}/doc/index.html -e "s/4.15/${VERSION}/g"
 
 echo "install source"
 cp httpd_src/modules/parp/mod_parp.c mod_parp-${VERSION}/apache2
+cp httpd_src/modules/parp/mod_parp.h mod_parp-${VERSION}/apache2
+grep -v parp_appl httpd_src/modules/parp/config.m4 > mod_parp-${VERSION}/apache2/config.m4
 
 echo "package: mod_parp-${VERSION}-src.tar.gz"
 tar cf mod_parp-${VERSION}-src.tar --owner root --group bin mod_parp-${VERSION}
