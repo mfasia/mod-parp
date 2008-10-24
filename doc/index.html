@@ -35,6 +35,13 @@
 mod_parp is HTTP request parameter parser. It processes the request message body 
 as well as the query portion of the request URL. The module parsed this data and 
 provides all parameter to other Apache modules by a table of name/value pairs.
+<br>
+The following content types are supported:
+<ul>
+<li>application/x-www-form-urlencoded</li>
+<li>multipart/form-data</li>
+<li>multipart/mixed</li>
+</ul>
 </p>
 <p>
 Activation:<br>
@@ -42,7 +49,7 @@ The module is activated by setting the "parp" key in either the request notes ta
 <table border="0" cellspacing="5" cellpadding="10" width="100%">
 <tr><td bgcolor="#EBE5E0">
 <pre>
-# load the module into your server:
+# Load the module into your server:
 LoadModule parp_module   &lt;path to module&gt;/mod_parp.so
 
 # activate mod_parp for all requests matching the URL /a /b but not the URL /a/upload
@@ -60,7 +67,7 @@ mod_parp denies request on parsing errors by default. The default return code is
 <table border="0" cellspacing="5" cellpadding="10" width="100%">
 <tr><td bgcolor="#EBE5E0">
 <pre>
-# ignore parser errors:
+# Ignore parser errors:
 PARP_ExitOnError         200
 </pre>
 </td></tr>
@@ -82,12 +89,11 @@ Optional function sample code:
 <table border="0" cellspacing="5" cellpadding="10" width="100%">
 <tr><td bgcolor="#EBE5E0">
 <pre>
-// 1) you may use the following forward declaration if not including mod_parp.h
+// 1) You may use the following forward declaration if not including mod_parp.h.
 APR_DECLARE_OPTIONAL_FN(apr_table_t *, parp_hp_table, (request_rec *));
 
-// 2) implement your handler using the parp_hp_table() function
-//    don't call the function before mod_parp's header parser (which is a
-//    APR_HOOK_MIDDLE handler) has been executed
+// 2) Implement your handler using the parp_hp_table() function. Don't call
+//    the function before mod_parp's header parser has been executed.
 static int parp_appl_handler(request_rec * r) {
   ...
   APR_OPTIONAL_FN_TYPE(parp_hp_table) *parp_appl_hp_table = 
@@ -112,11 +118,11 @@ Sample code using the mod_parp hook:
 <table border="0" cellspacing="5" cellpadding="10" width="100%">
 <tr><td bgcolor="#EBE5E0">
 <pre>
-// 1) include file providing the hook definitions
+// 1) Include file providing the hook definitions.
 #include "mod_parp.h"
 
-// 2) implement the callback function processing the parameter table
-//    note: return DECLINED on success
+// 2) Implement the callback function processing the parameter table.
+//    Note: return DECLINED on success.
 static apr_status_t parp_appl_impl(request_rec *r, apr_table_t *table) {
   int i;
   apr_table_entry_t *e = (apr_table_entry_t *) apr_table_elts(tl)->elts;
@@ -125,7 +131,7 @@ static apr_status_t parp_appl_impl(request_rec *r, apr_table_t *table) {
   return DECLINED;
 }
 
-// 3) register your method
+// 3) Register your method to mod_parp.
 APR_OPTIONAL_HOOK(parp, hp_hook, parp_appl_impl, NULL, NULL, APR_HOOK_MIDDLE);
 </pre>
 </td></tr>
