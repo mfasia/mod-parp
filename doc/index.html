@@ -38,15 +38,14 @@ provides all parameter to other Apache modules by a table of name/value pairs.
 </p>
 <p>
 Activation:<br>
-The module is activated by setting the "parp" key in either the request notes table (r-&gt;notes) or in the environment variables table (r-&gt;subprocess_env). mod_parp probes for the "parp" variable at the header parser hook right after the Apache module mod_setenvif. You may set "parp" by our own module or by using mod_setenvif.
+The module is activated by setting the "parp" key in either the request notes table (r-&gt;notes) or in the environment variables table (r-&gt;subprocess_env). mod_parp probes for the "parp" variable at the header parser hook right after the Apache module mod_setenvif. You may set "parp" by your own module or by using mod_setenvif.
 <table border="0" cellspacing="5" cellpadding="10" width="100%">
 <tr><td bgcolor="#EBE5E0">
 <pre>
 # load the module into your server:
-LoadModule parp_module &lt;path to module&gt;/mod_parp.so
+LoadModule parp_module   &lt;path to module&gt;/mod_parp.so
 
-# activate mod_parp for all requests matching the URL /a /b but not
-# the URL /a/upload
+# activate mod_parp for all requests matching the URL /a /b but not the URL /a/upload
 SetEnvIf   Request_URI   ^/a.*            parp
 SetEnvIf   Request_URI   ^/a/upload.*    !parp
 SetEnvIf   Request_URI   ^/b.*            parp
@@ -69,37 +68,65 @@ PARP_ExitOnError         200
 </p>
 
 <p>
-Memory handling:<br>
-mod_parp stores the whole request message body in the servers memory. Use the "LimitRequestBody" directive to limit the maximum data size.
+Memory:<br>
+mod_parp stores the whole request message body in the servers memory. Use the "LimitRequestBody" directive to limit the maximum data size!
 </p>
 
 
 <p>
 API:<br>
 The table storing the request data my be accessed using an optional function or by registering a callback (hook) to mod_parp.
+</p>
+<p>
+Optional function sample code:
 <table border="0" cellspacing="5" cellpadding="10" width="100%">
 <tr><td bgcolor="#EBE5E0">
 <pre>
-# optional function sample code:
-extern module AP_MODULE_DECLARE_DATA parp_module;
-static APR_OPTIONAL_FN_TYPE(parp_hp_table) *parp_appl_hp_table = NULL;
+// 1) you may use the following forward declaration if not including mod_parp.h
+APR_DECLARE_OPTIONAL_FN(apr_table_t *, parp_hp_table, (request_rec *));
 
+// 2) implement your handler using the parp_hp_table() function
+//    don't call the function before mod_parp's header parser (which is a
+//    APR_HOOK_MIDDLE handler) has been executed
 static int parp_appl_handler(request_rec * r) {
   ...
-  parp_appl_hp_table = APR_RETRIEVE_OPTIONAL_FN(parp_hp_table);
-  tl = parp_appl_hp_table(r);
+  APR_OPTIONAL_FN_TYPE(parp_hp_table) *parp_appl_hp_table = 
+    APR_RETRIEVE_OPTIONAL_FN(parp_hp_table);
+  apt_table_t *tl = parp_appl_hp_table(r);
   if(tl) {
     int i;
     apr_table_entry_t *e = (apr_table_entry_t *) apr_table_elts(tl)->elts;
-    for (i = 0; i < apr_table_elts(tl)->nelts; ++i) {
-      ap_rprintf(r, "of: %s = %s\n",
+    for(i = 0; i < apr_table_elts(tl)->nelts; ++i) {
+      ap_rprintf(r, "%d: %s = %s\n", i,
                  ap_escape_html(r->pool, e[i].key),
                  ap_escape_html(r->pool, e[i].val));
+      }
     }
-  }
   ...
+</pre>
+</td></tr>
+</table>
+</p>
+<p>
+Sample code using the mod_parp hook:
+<table border="0" cellspacing="5" cellpadding="10" width="100%">
+<tr><td bgcolor="#EBE5E0">
+<pre>
+// 1) include file providing the hook definitions
+#include "mod_parp.h"
 
-# hook:
+// 2) implement the callback function processing the parameter table
+//    note: return DECLINED on success
+static apr_status_t parp_appl_impl(request_rec *r, apr_table_t *table) {
+  int i;
+  apr_table_entry_t *e = (apr_table_entry_t *) apr_table_elts(tl)->elts;
+  for (i = 0; i < apr_table_elts(tl)->nelts; ++i) {
+  ...
+  return DECLINED;
+}
+
+// 3) register your method
+APR_OPTIONAL_HOOK(parp, hp_hook, parp_appl_impl, NULL, NULL, APR_HOOK_MIDDLE);
 </pre>
 </td></tr>
 </table>

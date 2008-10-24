@@ -39,6 +39,7 @@ echo "install source"
 cp httpd_src/modules/parp/mod_parp.c mod_parp-${VERSION}/apache2
 cp httpd_src/modules/parp/mod_parp.h mod_parp-${VERSION}/apache2
 grep -v parp_appl httpd_src/modules/parp/config.m4 > mod_parp-${VERSION}/apache2/config.m4
+cp httpd_src/modules/parp/Makefile.in mod_parp-${VERSION}/apache2
 
 echo "package: mod_parp-${VERSION}-src.tar.gz"
 tar cf mod_parp-${VERSION}-src.tar --owner root --group bin mod_parp-${VERSION}

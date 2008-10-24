@@ -38,6 +38,7 @@ static const char g_revision[] = "0.1";
 #include <httpd.h>
 #include <http_main.h>
 #include <http_request.h>
+#include <http_protocol.h>
 #include <http_config.h>
 #include <http_log.h>
 
@@ -65,8 +66,7 @@ module AP_MODULE_DECLARE_DATA parp_appl_module;
 /**
  * The parameter may be access via the optional function parp_hp_table()
  */
-extern module AP_MODULE_DECLARE_DATA parp_module;
-static APR_OPTIONAL_FN_TYPE(parp_hp_table) *parp_appl_hp_table = NULL;
+//static APR_OPTIONAL_FN_TYPE(parp_hp_table) *parp_appl_hp_table = NULL;
 
 /**
  * This is the function which has been registered to mod_parp's header
@@ -92,6 +92,7 @@ static apr_status_t parp_appl_test(request_rec *r, apr_table_t *table) {
  */
 static int parp_appl_handler(request_rec * r) {
   apr_table_t *tl = ap_get_module_config(r->request_config, &parp_appl_module);
+  APR_OPTIONAL_FN_TYPE(parp_hp_table) *parp_appl_hp_table = NULL;
 
   /* We decline to handle a request if parp-test-handler is not the value
    * of r->handler 
@@ -124,7 +125,7 @@ static int parp_appl_handler(request_rec * r) {
   /*
    * Access the parameter using the optional function
    */
-  parp_appl_hp_table = APR_RETRIEVE_OPTIONAL_FN(parp_hp_table);
+  parp_appl_hp_table =  APR_RETRIEVE_OPTIONAL_FN(parp_hp_table);
   tl = parp_appl_hp_table(r);
   if(tl) {
     int i;
