@@ -51,12 +51,12 @@ The module is activated by setting the "parp" key in either the request notes ta
 # Load the module into your server:
 LoadModule parp_module   &lt;path to module&gt;/mod_parp.so
 
-# activate mod_parp for all requests matching the URL /a /b but not the URL /a/upload
+# activate mod_parp for all requests matching the URL /a /b but not the URL /a/upload:
 SetEnvIf   Request_URI   ^/a.*            parp
 SetEnvIf   Request_URI   ^/a/upload.*    !parp
 SetEnvIf   Request_URI   ^/b.*            parp
 
-# suppress content types not supported by mod_parp
+# suppress content types not supported by mod_parp:
 SetEnvIf   Content-Type  text/plain      !parp
 SetEnvIf   Content-Type  text/xml        !parp
 SetEnvIf   Content-Type  text/html       !parp
@@ -67,7 +67,7 @@ SetEnvIf   Content-Type  text/html       !parp
 
 <p>
 Error handling:<br>
-mod_parp denies request on parsing errors by default. The default return code is 500. You may override this return code using the directive "PARP_ExitOnError &lt;code&gt;". Set the code 200 to ignore erros.
+mod_parp denies request on parsing errors by default. The default return code is 500. You may override this return code using the directive "PARP_ExitOnError &lt;code&gt;". Set the code to 200 in order to ignore erros.
 <table border="0" cellspacing="5" cellpadding="10" width="100%">
 <tr><td bgcolor="#EBE5E0">
 <pre>
