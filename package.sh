@@ -18,12 +18,12 @@ VERSION=`grep "char g_revision" httpd_src/modules/parp/mod_parp.c | awk '{print 
 
 TAGV=`echo $VERSION | awk -F'.' '{print "REL_" $1 "_" $2}'`
 echo "check release tag $TAGV ..."
-#if [ "`cvs -q diff -r $TAGV 2>&1`" = "" ]; then
-#  echo ok
-#else
-#  echo "FAILED"
-#  exit 1
-#fi
+if [ "`cvs -q diff -r $TAGV 2>&1`" = "" ]; then
+  echo ok
+else
+  echo "FAILED, cvs tag $TAGV not set for all files"
+  exit 1
+fi
 
 rm -rf mod_parp-${VERSION}*
 mkdir -p mod_parp-${VERSION}/doc
