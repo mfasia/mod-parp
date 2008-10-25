@@ -32,10 +32,9 @@
 <tbody>
 <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td><td>
 <p>
-mod_parp is HTTP request parameter parser. It processes the request message body 
-as well as the query portion of the request URL. The module parsed this data and 
-provides all parameter to other Apache modules by a table of name/value pairs.
-<br>
+mod_parp is a HTTP request parameter parser module for the Apache web server. It processes the request message body as well as the query portion of the request URL. The module parsed this data and provides all parameter to other Apache modules by a table of name/value pairs.
+</p>
+<p>
 The following content types are supported:
 <ul>
 <li>application/x-www-form-urlencoded</li>
@@ -56,6 +55,11 @@ LoadModule parp_module   &lt;path to module&gt;/mod_parp.so
 SetEnvIf   Request_URI   ^/a.*            parp
 SetEnvIf   Request_URI   ^/a/upload.*    !parp
 SetEnvIf   Request_URI   ^/b.*            parp
+
+# suppress content types not supported by mod_parp
+SetEnvIf   Content-Type  text/plain      !parp
+SetEnvIf   Content-Type  text/xml        !parp
+SetEnvIf   Content-Type  text/html       !parp
 </pre>
 </td></tr>
 </table>

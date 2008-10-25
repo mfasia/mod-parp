@@ -46,9 +46,16 @@ Listen          localhost:16100
 <VirtualHost localhost:16100>
    ServerName localhost
    ServerAdmin webmaster@localhost
+
+   # enable parp
+   #SetEnvIf Content-Type ".*application/x-www-form-urlencoded.*" parp
+   #SetEnvIf Content-Type ".*multipart/form-data.*" parp
+   #SetEnvIf Content-Type ".*multipart/mixed.*" parp
+
    <IfDefine noerror>
    PARP_ExitOnError 200
    </IfDefine>
+
    ScriptAlias /cgi/ ##SERVER_ROOT##/htdocs/cgi/
    <Location /cgi>
        Options ExecCGI -MultiViews +SymLinksIfOwnerMatch
@@ -58,6 +65,7 @@ Listen          localhost:16100
 
    <Location /test>
      SetHandler parp-test-handler
+     SetEnvIf Content-Type "text/plain" !parp
    </Location>
 
 </VirtualHost>

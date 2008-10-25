@@ -20,7 +20,7 @@ _WAIT
 _REQ localhost 16100
 __POST /test/post/2 HTTP/1.1
 __Host: localhost
-__Content-Type: application/x-www-form-urlencoded
+__Content-Type: apPlication/x-www-form-urlencoded
 __Content-Length: AUTO
 __
 __param1=value1&param2=value2&param3=value3&param4&
@@ -68,7 +68,7 @@ _CLOSE
 
 # POST multipart data
 _REQ localhost 16100
-__POST /test/post/5?param4=value4 HTTP/1.1
+__POST /test/post/5?param4=value4&param1=value5 HTTP/1.1
 __Host: localhost
 __Content-Type: multipart/form-data; boundary=foo
 __Content-Length: AUTO
@@ -98,6 +98,7 @@ __--foo--
 _EXPECT . "200 OK"
 _EXPECT . "recvd: paramA = valueA"
 _EXPECT . "recvd: param1 = value1"
+_EXPECT . "recvd: param1 = value5"
 _EXPECT . "recvd: param2 = value2"
 _EXPECT . "recvd: param3 = value3"
 _EXPECT . "recvd: param4 = value4"

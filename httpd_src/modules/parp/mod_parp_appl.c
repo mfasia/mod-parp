@@ -145,9 +145,21 @@ static int parp_appl_handler(request_rec * r) {
  * We could do this using mod_setenvif alternatively.
  */
 static int parp_appl_post_read_request(request_rec * r) {
-  ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                PARPA_LOG_PFX(000)"prr, enable parp");
-  apr_table_set(r->notes, "parp", "on");
+  if(ap_is_initial_req(r)) {
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                  PARPA_LOG_PFX(000)"prr, enable parp");
+    /*
+     * should only be activated for content types known my mod_parp
+     */
+//    const char *ct = apr_table_get(r->headers_in, "Content-Type");
+//    if(ct) {
+//      if(ap_strcasestr(ct, "application/x-www-form-urlencoded") ||
+//         ap_strcasestr(ct, "multipart/form-data") ||
+//         ap_strcasestr(ct, "multipart/mixed")) {
+        apr_table_set(r->subprocess_env, "parp", "on");
+//      }
+//    }
+  }
   return DECLINED;
 }
 
@@ -170,8 +182,8 @@ static const command_rec parp_appl_config_cmds[] = {
  * apache register 
  ***********************************************************************/
 static void parp_appl_register_hooks(apr_pool_t * p) {
-  static const char *pre[] = { "mod_setenvif.c", NULL };
-  ap_hook_post_read_request(parp_appl_post_read_request, pre, NULL, APR_HOOK_LAST);
+  static const char *post[] = { "mod_setenvif.c", NULL };
+  ap_hook_post_read_request(parp_appl_post_read_request, NULL, post, APR_HOOK_LAST);
   ap_hook_handler(parp_appl_handler, NULL, NULL, APR_HOOK_LAST);
   APR_OPTIONAL_HOOK(parp, hp_hook, parp_appl_test, NULL, NULL, APR_HOOK_MIDDLE);
 }

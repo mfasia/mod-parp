@@ -67,7 +67,7 @@ struct parp_s {
   request_rec *r;
   apr_bucket_brigade *bb;
   apr_table_t *params;
-  apr_hash_t *parsers;
+  apr_table_t *parsers;
   char *error; 
   int flags;
   int recursion;
@@ -499,14 +499,15 @@ static parp_parser_f parp_get_parser(parp_t *self, const char *ct) {
   if (ct) {
     type = apr_strtok(apr_pstrdup(self->pool, ct), ";,", &last);
     if (type) {
-      parser = apr_hash_get(self->parsers, type, APR_HASH_KEY_STRING);
+      parser = (parp_parser_f)apr_table_get(self->parsers, type);
     }
   }
   if (parser) {
     return parser;
   }
   else {
-    self->error = apr_pstrdup(self->pool, "No parser available for this content type");
+    self->error = apr_psprintf(self->pool, "No parser available for this content type (%s)",
+                               ct == NULL ? "-" : ct);
     return parp_not_impl;
   }
 }
@@ -528,13 +529,13 @@ AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags) {
   self->r = r;
   self->bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
   self->params = apr_table_make(r->pool, 5);
-  self->parsers = apr_hash_make(r->pool);
-  apr_hash_set(self->parsers, "application/x-www-form-urlencoded", 
-               APR_HASH_KEY_STRING, parp_urlencode);
-  apr_hash_set(self->parsers, "multipart/form-data", 
-               APR_HASH_KEY_STRING, parp_multipart);
-  apr_hash_set(self->parsers, "multipart/mixed", 
-               APR_HASH_KEY_STRING, parp_multipart);
+  self->parsers = apr_table_make(r->pool, 3);
+  apr_table_setn(self->parsers, apr_pstrdup(r->pool, "application/x-www-form-urlencoded"), 
+                (char *)parp_urlencode);
+  apr_table_setn(self->parsers, apr_pstrdup(r->pool, "multipart/form-data"), 
+               (char *)parp_multipart);
+  apr_table_setn(self->parsers, apr_pstrdup(r->pool, "multipart/mixed"), 
+               (char *)parp_multipart);
   self->flags = flags;
 
   return self;
@@ -717,41 +718,43 @@ AP_DECLARE(apr_table_t *)parp_hp_table(request_rec *r) {
  */
 static int parp_header_parser(request_rec * r) {
   apr_status_t status = DECLINED;
-  const char *e = apr_table_get(r->notes, "parp");
-  if(e == NULL) {
-    e = apr_table_get(r->subprocess_env, "parp");
-  }
-  if(e == NULL) {
-    /* no event */
-    return DECLINED;
-  } else {
-    apr_table_t *tl;
-    parp_t *parp = parp_new(r, PARP_FLAGS_NONE);
-    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                  PARP_LOG_PFX(000)"enabled (%s)", e);
-
-    status = parp_read_params(parp);
-    ap_set_module_config(r->request_config, &parp_module, parp);
-    ap_add_input_filter("parp-forward-filter", parp, r, r->connection);
-    if(status == APR_SUCCESS) {
-      parp_get_params(parp, &tl);
-      status = parp_run_hp_hook(r, tl);
+  if(ap_is_initial_req(r)) {
+    const char *e = apr_table_get(r->notes, "parp");
+    if(e == NULL) {
+      e = apr_table_get(r->subprocess_env, "parp");
+    }
+    if(e == NULL) {
+      /* no event */
+      return DECLINED;
     } else {
-      parp_srv_config *sconf = (parp_srv_config*)ap_get_module_config(r->server->module_config,
-                                                                      &parp_module);
-      char *error = parp_get_error(parp);
-
-      ap_log_rerror(APLOG_MARK, sconf->onerror == 200 ? APLOG_WARNING : APLOG_ERR, 0, r,
-                    PARP_LOG_PFX(010)"parser error, rc=%d (%s)",
-                    sconf->onerror == -1 ? 500 : sconf->onerror,
-                    error == NULL ? "-" : error);
-      if(sconf->onerror == 200) {
-        return DECLINED;
-      }
-      if(sconf->onerror == -1) {
-        status = HTTP_INTERNAL_SERVER_ERROR;
+      apr_table_t *tl;
+      parp_t *parp = parp_new(r, PARP_FLAGS_NONE);
+      ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                    PARP_LOG_PFX(000)"enabled (%s)", e);
+      
+      status = parp_read_params(parp);
+      ap_set_module_config(r->request_config, &parp_module, parp);
+      ap_add_input_filter("parp-forward-filter", parp, r, r->connection);
+      if(status == APR_SUCCESS) {
+        parp_get_params(parp, &tl);
+        status = parp_run_hp_hook(r, tl);
       } else {
-        status = sconf->onerror;
+        parp_srv_config *sconf = (parp_srv_config*)ap_get_module_config(r->server->module_config,
+                                                                        &parp_module);
+        char *error = parp_get_error(parp);
+        
+        ap_log_rerror(APLOG_MARK, sconf->onerror == 200 ? APLOG_WARNING : APLOG_ERR, 0, r,
+                      PARP_LOG_PFX(010)"parser error, rc=%d (%s)",
+                      sconf->onerror == -1 ? 500 : sconf->onerror,
+                      error == NULL ? "-" : error);
+        if(sconf->onerror == 200) {
+          return DECLINED;
+        }
+        if(sconf->onerror == -1) {
+          status = HTTP_INTERNAL_SERVER_ERROR;
+        } else {
+          status = sconf->onerror;
+        }
       }
     }
   }
