@@ -29,7 +29,7 @@
  * Version
  ***********************************************************************/
 static const char revision[] = "$Id$";
-static const char g_revision[] = "0.1";
+static const char g_revision[] = "0.2";
 
 /************************************************************************
  * Includes
@@ -787,7 +787,8 @@ const char *parp_error_code_cmd(cmd_parms *cmd, void *dcfg, const char *arg) {
     return NULL;
   }
   if((sconf->onerror < 400) || (sconf->onerror > 599)) {
-    return apr_psprintf(cmd->pool, "%s: error code must be a numeric value between 400 and 599", 
+    return apr_psprintf(cmd->pool, "%s: error code must be a numeric value between 400 and 599"
+                        " (or set 200 to ignore errors)",
                         cmd->directive->directive);
   }
   return NULL;
