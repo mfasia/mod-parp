@@ -62,7 +62,11 @@ static const char g_revision[] = "0.2";
 /************************************************************************
  * structures
  ***********************************************************************/
-struct parp_s {
+ 
+/**
+ * parp hook
+ */
+typedef struct {
   apr_pool_t *pool;
   request_rec *r;
   apr_bucket_brigade *bb;
@@ -71,9 +75,7 @@ struct parp_s {
   char *error; 
   int flags;
   int recursion;
-};
-
-typedef struct parp_s parp_t;
+} parp_t;
 
 /**
  * server configuration
@@ -82,6 +84,13 @@ typedef struct {
   int onerror;
 } parp_srv_config;
 
+/**
+ * block
+ */
+typedef struct {
+  apr_size_t len;
+  char *data;
+} parp_block_t;
 
 /************************************************************************
  * globals
@@ -232,6 +241,7 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
   apr_size_t tag_len;
   int incr;
   apr_table_t *tl;
+  parp_block_t *boundary;
   
   tl = apr_table_make(self->pool, 5);
   *result = tl;
@@ -255,12 +265,15 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
 	match = 0;
 	continue;
       }
-      /* prepare data */
+      /* prepare data finalize string with 0 */
       data[i - match] = 0;
 
       /* got it, store it */
       if (data[start]) {
-	apr_table_addn(tl, tag, &data[start]);
+        boundary = apr_pcalloc(self->pool, sizeof(*boundary));
+	boundary->len = (i - match) - start;
+	boundary->data = &data[start];
+	apr_table_addn(tl, tag, (char *) boundary);
       }
       i += incr;
       start = i;
@@ -288,13 +301,13 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
  *
  * @return APR_SUCCESS or APR_EINVAL
  */
-static apr_status_t parp_get_headers(parp_t *self, char **rdata, apr_size_t len,
+static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
                                      apr_table_t **headers) {
   char *last;
   char *header;
   char *key;
   char *val;
-  char *data = *rdata;
+  char *data = b->data;
 
   apr_table_t *tl = apr_table_make(self->pool, 3);
   *headers = tl;
@@ -321,7 +334,8 @@ static apr_status_t parp_get_headers(parp_t *self, char **rdata, apr_size_t len,
     ++last;
   }
   
-  *rdata = last;
+  b->len -= last - data;
+  b->data = last;
   
   return APR_SUCCESS;
 }
@@ -382,11 +396,11 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
   apr_table_t *ctds;
   apr_table_entry_t *e;
   int i;
-  char *bdata;
   const char *ctd;
   const char *ct;
   const char *key;
   parp_parser_f parser;
+  parp_block_t *b;
   apr_table_t *hs = apr_table_make(self->pool, 3);
   
   if (self->recursion > 3) {
@@ -421,14 +435,14 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
   e = (apr_table_entry_t *) apr_table_elts(bs)->elts;
   for (i = 0; i < apr_table_elts(bs)->nelts; ++i) {
     /* read boundary headers */
-    bdata = e[i].val;
-    if ((status = parp_get_headers(self, &bdata, strlen(bdata), &hs))) {
+    b = (parp_block_t *)e[i].val;
+    if ((status = parp_get_headers(self, b, &hs))) {
       return status;
     }
 
     if ((ct = apr_table_get(hs, "Content-Type"))) {
       parser = parp_get_parser(self, ct);
-      if ((status = parser(self, hs, bdata, strlen(bdata))) != APR_SUCCESS && 
+      if ((status = parser(self, hs, b->data, b->len)) != APR_SUCCESS && 
 	  status != APR_ENOTIMPL) {
 	return status;
       }
@@ -442,23 +456,24 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
       return status;
     }
 
+    /* if no content type is set the b->data is the parameters value */
     if (!ct) {
       if ((key = apr_table_get(ctds, "name")) == NULL) {
 	return APR_EINVAL;
       }
       
-      val_len = strlen(bdata);
+      val_len = b->len;
       /* there must be a \r\n or at least a \n */
-      if (val_len >= 2 && strcmp(&bdata[val_len - 2], "\r\n") == 0) {
-	bdata[val_len - 2] = 0;
+      if (val_len >= 2 && strcmp(&b->data[val_len - 2], "\r\n") == 0) {
+	b->data[val_len - 2] = 0;
       }
-      else if (val_len >= 1 && bdata[val_len - 1] == '\n') {
-	bdata[val_len - 1] = 0;
+      else if (val_len >= 1 && b->data[val_len - 1] == '\n') {
+	b->data[val_len - 1] = 0;
       }
       else {
 	return APR_EINVAL;
       }
-      apr_table_add(self->params, key, bdata);
+      apr_table_add(self->params, key, b->data);
     }
     
   }
