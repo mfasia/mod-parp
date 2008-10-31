@@ -93,6 +93,9 @@ static apr_status_t parp_appl_test(request_rec *r, apr_table_t *table) {
 static int parp_appl_handler(request_rec * r) {
   apr_table_t *tl = ap_get_module_config(r->request_config, &parp_appl_module);
   APR_OPTIONAL_FN_TYPE(parp_hp_table) *parp_appl_hp_table = NULL;
+  APR_OPTIONAL_FN_TYPE(parp_body_data) *parp_appl_body_data = NULL;
+  char *data;
+  apr_size_t len;
 
   /* We decline to handle a request if parp-test-handler is not the value
    * of r->handler 
@@ -137,6 +140,17 @@ static int parp_appl_handler(request_rec * r) {
     }
   }
 
+  /*
+   * Access the body data using the optional function
+   */
+  parp_appl_body_data =  APR_RETRIEVE_OPTIONAL_FN(parp_body_data);
+  data = parp_appl_body_data(r, &len);
+  if (data) {
+    data[len] = 0;
+    ap_rprintf(r, "body: %s\n", ap_escape_html(r->pool, data));
+  }
+  
+  
   return OK;
 }
 

@@ -33,6 +33,11 @@ if [ $? -ne 0 ]; then
     ERRORS=`expr $ERRORS + 1`
     echo "FAILED textplain.htt"
 fi
+./htt.sh -s scripts/body.htt
+if [ $? -ne 0 ]; then
+    ERRORS=`expr $ERRORS + 1`
+    echo "FAILED body.htt"
+fi
 
 #for E in `seq 7`; do
 #ps -Ao vsz,comm,pid,ppid | grep `cat Server/logs/pid` | sort -n | tail -1 | awk '{print $1 " " $3}'
@@ -45,6 +50,7 @@ fi
 #
 #ps -Ao vsz,comm,pid,ppid | grep `cat Server/logs/pid` | sort -n | tail -1 | awk '{print $1 " " $3}'
 ./ctl.sh stop
+sleep 1
 ./ctl.sh start -D noerror
 sleep 1
 ./htt.sh -s scripts/error.htt

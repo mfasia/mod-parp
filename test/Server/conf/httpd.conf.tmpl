@@ -56,6 +56,8 @@ Listen          localhost:16100
    PARP_ExitOnError 200
    </IfDefine>
 
+   PARP_BodyData text/foo text/xml
+
    ScriptAlias /cgi/ ##SERVER_ROOT##/htdocs/cgi/
    <Location /cgi>
        Options ExecCGI -MultiViews +SymLinksIfOwnerMatch

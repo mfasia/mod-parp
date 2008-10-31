@@ -75,6 +75,8 @@ typedef struct {
   char *error; 
   int flags;
   int recursion;
+  char *data;
+  apr_size_t len;
 } parp_t;
 
 /**
@@ -82,6 +84,7 @@ typedef struct {
  */
 typedef struct {
   int onerror;
+  apr_table_t *parsers;
 } parp_srv_config;
 
 /**
@@ -498,6 +501,23 @@ static apr_status_t parp_not_impl(parp_t *self, apr_table_t *headers,
 }
 
 /**
+ * To get body data from a content type not parsed
+ *
+ * @param self IN instance
+ * @param headers IN headers with additional data 
+ * @param data IN data with urlencoded content
+ * @param len IN len of data
+ *
+ * @return APR_SUCCESS
+ */
+static apr_status_t parp_get_body(parp_t *self, apr_table_t *headers, 
+                                  char *data, apr_size_t len) {
+  self->data = data;
+  self->len = len;
+  return APR_SUCCESS;
+}
+
+/**
  * Get content type parser
  *
  * @param self IN instance
@@ -514,7 +534,14 @@ static parp_parser_f parp_get_parser(parp_t *self, const char *ct) {
   if (ct) {
     type = apr_strtok(apr_pstrdup(self->pool, ct), ";,", &last);
     if (type) {
-      parser = (parp_parser_f)apr_table_get(self->parsers, type);
+      parp_srv_config *sconf = ap_get_module_config(self->r->server->module_config,
+                                                    &parp_module);
+      if (sconf->parsers) {
+	parser = (parp_parser_f)apr_table_get(sconf->parsers, type);
+      }
+      if (!parser) {
+	parser = (parp_parser_f)apr_table_get(self->parsers, type);
+      }
     }
   }
   if (parser) {
@@ -596,8 +623,12 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
       data[len] = 0;
     }
     parser = parp_get_parser(self, apr_table_get(r->headers_in, 
-	                                         "Content-Type"));  
+	                     "Content-Type"));  
     if ((status = parser(self, r->headers_in, data, len)) != APR_SUCCESS) {
+      /* only set data to self pointer if untouched by parser, 
+       * because parser could modify body data */
+      if (status == APR_ENOTIMPL) {
+      }
       return status;
     }
 
@@ -717,6 +748,26 @@ AP_DECLARE(apr_table_t *)parp_hp_table(request_rec *r) {
   return tl;
 }  
 
+/**
+ * Optional function which may be used by Apache modules
+ * to access the body data. Only get data if not allready
+ * parsed (and modified) and parser was active.
+ *
+ * @param r IN request record
+ * @param len OUT body data len
+ *
+ * @return body data or NULL
+ */
+AP_DECLARE(char *)parp_body_data(request_rec *r, apr_size_t *len) {
+  parp_t *parp = ap_get_module_config(r->request_config, &parp_module);
+  *len = 0;
+  if(parp && parp->data) {
+    *len = parp->len;
+    return parp->data;
+  }
+  return NULL;
+}  
+
 /************************************************************************
  * handlers
  ***********************************************************************/
@@ -754,8 +805,8 @@ static int parp_header_parser(request_rec * r) {
         parp_get_params(parp, &tl);
         status = parp_run_hp_hook(r, tl);
       } else {
-        parp_srv_config *sconf = (parp_srv_config*)ap_get_module_config(r->server->module_config,
-                                                                        &parp_module);
+        parp_srv_config *sconf = ap_get_module_config(r->server->module_config,
+                                                      &parp_module);
         char *error = parp_get_error(parp);
         
         ap_log_rerror(APLOG_MARK, sconf->onerror == 200 ? APLOG_WARNING : APLOG_ERR, 0, r,
@@ -786,7 +837,10 @@ static void *parp_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
   parp_srv_config *b = (parp_srv_config *)basev;
   parp_srv_config *o = (parp_srv_config *)addv;
   if(o->onerror == -1) {
-    return b;
+    o->onerror = b->onerror;
+  }
+  if(o->parsers == NULL) {
+    o->parsers = b->parsers;
   }
   return o;
 }
@@ -795,8 +849,8 @@ static void *parp_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
  * directiv handlers 
  ***********************************************************************/
 const char *parp_error_code_cmd(cmd_parms *cmd, void *dcfg, const char *arg) {
-  parp_srv_config *sconf = (parp_srv_config*)ap_get_module_config(cmd->server->module_config,
-                                                                  &parp_module);
+  parp_srv_config *sconf = ap_get_module_config(cmd->server->module_config,
+                                                &parp_module);
   sconf->onerror  = atoi(arg);
   if(sconf->onerror == 200) {
     return NULL;
@@ -809,12 +863,28 @@ const char *parp_error_code_cmd(cmd_parms *cmd, void *dcfg, const char *arg) {
   return NULL;
 }
 
+const char *parp_body_data_cmd(cmd_parms *cmd, void *dcfg, const char *arg) {
+  parp_srv_config *sconf = ap_get_module_config(cmd->server->module_config,
+                                                &parp_module);
+  if (!sconf->parsers) {
+    sconf->parsers = apr_table_make(cmd->pool, 5);
+  }
+  apr_table_setn(sconf->parsers, apr_pstrdup(cmd->pool, arg), 
+                (char *)parp_get_body);
+  return NULL;
+}
+  
 static const command_rec parp_config_cmds[] = {
   AP_INIT_TAKE1("PARP_ExitOnError", parp_error_code_cmd, NULL,
                 RSRC_CONF,
                 "PARP_ExitOnError <code>, defines the HTTP error code"
                 " to return on parsing errors. Default is 500."
                 " Specify 200 in order to ignore errors."),
+  AP_INIT_ITERATE("PARP_BodyData", parp_body_data_cmd, NULL,
+                  RSRC_CONF,
+                  "PARP_BodyData <content-type>, defines content"
+		  " types where only the body data are read. Default is"
+		  " no content type."),
   { NULL }
 };
 
@@ -827,6 +897,7 @@ static void parp_register_hooks(apr_pool_t * p) {
   ap_hook_header_parser(parp_header_parser, pre, NULL, APR_HOOK_MIDDLE);
   ap_register_input_filter("parp-forward-filter", parp_forward_filter, NULL, AP_FTYPE_RESOURCE);
   APR_REGISTER_OPTIONAL_FN(parp_hp_table);
+  APR_REGISTER_OPTIONAL_FN(parp_body_data);
 }
 
 /************************************************************************
