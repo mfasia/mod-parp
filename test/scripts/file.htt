@@ -37,7 +37,7 @@ __Content-Disposition: form-data; name="access_log"; filename="access_log"
 __Content-Type: application/octet-stream
 __
 _PIPE
-_EXEC cat ../httpd/modules/parp/.libs/mod_parp.o
+_EXEC cat scripts/bin
 __
 __-----------------------------15922602401425828601184594646
 __Content-Disposition: form-data; name="action"

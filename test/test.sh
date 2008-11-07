@@ -33,6 +33,11 @@ if [ $? -ne 0 ]; then
     ERRORS=`expr $ERRORS + 1`
     echo "FAILED textplain.htt"
 fi
+./htt.sh -s scripts/texthtml.htt
+if [ $? -ne 0 ]; then
+    ERRORS=`expr $ERRORS + 1`
+    echo "FAILED texthtml.htt"
+fi
 ./htt.sh -s scripts/body.htt
 if [ $? -ne 0 ]; then
     ERRORS=`expr $ERRORS + 1`

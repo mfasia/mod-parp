@@ -31,9 +31,13 @@
 <table>
 <tbody>
 <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td><td>
+
+
 <p>
 mod_parp is a HTTP request parameter parser module for the Apache web server. It processes the request message body as well as the query portion of the request URL. The module parsed this data and provides all parameter to other Apache modules by a table of name/value pairs.
 </p>
+
+
 <p>
 The following content types are supported:
 <ul>
@@ -42,6 +46,8 @@ The following content types are supported:
 <li>multipart/mixed</li>
 </ul>
 </p>
+
+
 <p>
 Activation:<br>
 The module is activated by setting the "parp" key in either the request notes table (r-&gt;notes) or in the environment variables table (r-&gt;subprocess_env). mod_parp probes for the "parp" variable at the header parser hook right after the Apache module mod_setenvif. You may set "parp" by your own module or by using mod_setenvif.
@@ -65,6 +71,7 @@ SetEnvIf   Content-Type  text/html       !parp
 </table>
 </p>
 
+
 <p>
 Error handling:<br>
 mod_parp denies request on parsing errors by default. The default return code is 500. You may override this return code using the directive "PARP_ExitOnError &lt;code&gt;". Set the code to 200 in order to ignore erros.
@@ -77,6 +84,7 @@ PARP_ExitOnError         200
 </td></tr>
 </table>
 </p>
+
 
 <p>
 Memory:<br>
@@ -117,6 +125,8 @@ static int parp_appl_handler(request_rec * r) {
 </td></tr>
 </table>
 </p>
+
+
 <p>
 Sample code using the mod_parp hook:
 <table border="0" cellspacing="5" cellpadding="10" width="100%">
@@ -141,6 +151,46 @@ APR_OPTIONAL_HOOK(parp, hp_hook, parp_appl_impl, NULL, NULL, APR_HOOK_MIDDLE);
 </td></tr>
 </table>
 </p>
+
+
+<p>
+Raw body processing:<br>
+mod_parp implements a function to access the raw body data of a HTTP POST request. Specify the raw content type handler using the "PARP_BodyData &lt;type&gt;" directive.
+<table border="0" cellspacing="5" cellpadding="10" width="100%">
+<tr><td bgcolor="#EBE5E0">
+<pre>
+# Enable processing of other "raw" data types:
+PARP_BodyData            text/plain text/xml text/html
+SetEnvIf   Content-Type  text/plain       parp
+SetEnvIf   Content-Type  text/xml         parp
+SetEnvIf   Content-Type  text/html        parp
+</pre>
+</td></tr>
+</table>
+</p>
+<p>
+Sample code to access the raw body data:
+<table border="0" cellspacing="5" cellpadding="10" width="100%">
+<tr><td bgcolor="#EBE5E0">
+<pre>
+// 1) You may use the following forward declaration if not including mod_parp.h.
+APR_DECLARE_OPTIONAL_FN(apr_table_t *, parp_hp_table, (request_rec *));
+
+// 2) Implement your handler using the parp_body_data() function. Don't call
+//    the function before mod_parp's header parser has been executed.
+static int parp_appl_handler(request_rec * r) {
+  ...
+  apr_size_t len;
+  APR_OPTIONAL_FN_TYPE(parp_body_data) *parp_appl_body_data = 
+    APR_RETRIEVE_OPTIONAL_FN(parp_body_data);
+  const char *data = parp_appl_body_data(r, &amp;len);
+  if(data) {
+  ...
+</pre>
+</td></tr>
+</table>
+</p>
+
 
 <p>
 mod_parp is available at <a href="http://sourceforge.net/projects/parp/">SourceForge.net</a> 
