@@ -174,7 +174,7 @@ Sample code to access the raw body data:
 <tr><td bgcolor="#EBE5E0">
 <pre>
 // 1) You may use the following forward declaration if not including mod_parp.h.
-APR_DECLARE_OPTIONAL_FN(apr_table_t *, parp_hp_table, (request_rec *));
+APR_DECLARE_OPTIONAL_FN(char *, parp_body_data, (request_rec *, apr_size_t *));
 
 // 2) Implement your handler using the parp_body_data() function. Don't call
 //    the function before mod_parp's header parser has been executed.
