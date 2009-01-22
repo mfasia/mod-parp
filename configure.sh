@@ -9,5 +9,6 @@ CFLAGS="-g -Wall" ./configure \
   --enable-so \
   --enable-static-support \
   --enable-ssl \
+  --enable-proxy \
   --enable-parp=shared \
   --enable-parp-appl=shared

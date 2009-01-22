@@ -47,6 +47,14 @@ Listen          localhost:16100
    ServerName localhost
    ServerAdmin webmaster@localhost
 
+   ProxyRequests              Off
+   <Proxy *>
+      Order deny,allow
+      Allow from all
+   </Proxy>
+   ProxyPass                  /htt http://localhost:16101/htt
+   ProxyPassReverse           /htt http://localhost:16101/htt
+
    # enable parp
    #SetEnvIf Content-Type ".*application/x-www-form-urlencoded.*" parp
    #SetEnvIf Content-Type ".*multipart/form-data.*" parp
