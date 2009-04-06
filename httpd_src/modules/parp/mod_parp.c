@@ -130,6 +130,8 @@ static apr_status_t parp_get_payload(parp_t *self, char **data,
   apr_bucket *b;
   const char *buf;
   apr_size_t buflen;
+  const char *enc;
+  const char *len_str;
 
   request_rec *r = self->r;
   int seen_eos = 0;
@@ -172,6 +174,15 @@ static apr_status_t parp_get_payload(parp_t *self, char **data,
       != APR_SUCCESS) {
     self->error = apr_pstrdup(r->pool, "Input filter: apr_brigade_pflatten failed");
   }
+
+  /* correct content-length header if deflate filter runs before */
+  enc = apr_table_get(r->headers_in, "Transfer-Encoding");
+  if (!enc || strcasecmp(enc, "chunked") != 0) {
+    len_str = apr_itoa(r->pool, *len);
+    apr_table_set(r->headers_in, "Content-Length", len_str);
+    r->remaining = *len;
+  }
+
   return status;
 }
 
@@ -672,7 +683,7 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
     /* nothing to do ... */
     return ap_get_brigade(f->next, bb, mode, block, nbytes);
   }
-
+  
   /* do never send a bigger brigade than request with "nbytes"! */
   while (read < nbytes && !APR_BRIGADE_EMPTY(self->bb)) {
     e = APR_BRIGADE_FIRST(self->bb);
