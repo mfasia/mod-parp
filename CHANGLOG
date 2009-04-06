@@ -1,4 +1,4 @@
-Version 0.4
+Version 0.3
   - Correct content-length header if modules before do trop or do not adjust it
 
 Version 0.1
