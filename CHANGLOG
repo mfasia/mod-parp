@@ -1,3 +1,6 @@
+Version 0.4
+  - Correct content-length header if modules before do trop or do not adjust it
+
 Version 0.1
 
   - Urlencrypted and multipart form data parser
