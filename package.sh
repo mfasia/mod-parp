@@ -24,6 +24,10 @@ else
   echo "FAILED, cvs tag $TAGV not set for all files"
   exit 1
 fi
+if [ `grep -c "Version $VERSION" doc/CHANGES.txt` -eq 0 ]; then
+  echo "CHANGES.txt check FAILED"
+  exit 1
+fi
 
 rm -rf mod_parp-${VERSION}*
 mkdir -p mod_parp-${VERSION}/doc
@@ -32,7 +36,7 @@ mkdir -p mod_parp-${VERSION}/apache2
 echo "install documentation"
 #cp doc/README.TXT mod_parp-${VERSION}
 cp doc/LICENSE.txt mod_parp-${VERSION}/doc
-#cp doc/CHANGES.txt mod_parp-${VERSION}/doc
+cp doc/CHANGES.txt mod_parp-${VERSION}/doc
 sed <doc/index.html >mod_parp-${VERSION}/doc/index.html -e "s/4.15/${VERSION}/g"
 
 echo "install source"

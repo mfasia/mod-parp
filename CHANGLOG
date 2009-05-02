@@ -1,9 +1,0 @@
-Version 0.3
-  - Correct content-length header if modules before do trop or do not adjust it
-
-Version 0.1
-
-  - Urlencrypted and multipart form data parser
-
-  - Supports recursive multipart boundaries
-    (hard limited to a 2 recursions)

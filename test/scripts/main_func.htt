@@ -35,6 +35,25 @@ _EXPECT . "of: param3 = value3"
 _EXPECT . "of: param4 ="
 _WAIT
 
+# GET with body data
+_REQ localhost 16100
+__GET /test/post/2a HTTP/1.1
+__Host: localhost
+__Content-Type: apPlication/x-www-form-urlencoded
+__Content-Length: AUTO
+__
+__param1=value1&param2=value2&param3=value3&param4&
+_EXPECT . "200 OK"
+_EXPECT . "recvd: param1 = value1"
+_EXPECT . "recvd: param2 = value2"
+_EXPECT . "recvd: param3 = value3"
+_EXPECT . "recvd: param4 ="
+_EXPECT . "of: param1 = value1"
+_EXPECT . "of: param2 = value2"
+_EXPECT . "of: param3 = value3"
+_EXPECT . "of: param4 ="
+_WAIT
+
 # POST with wrong content type
 _REQ localhost 16100
 __POST /test/post/3 HTTP/1.1

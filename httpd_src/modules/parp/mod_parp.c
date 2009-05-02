@@ -29,7 +29,7 @@
  * Version
  ***********************************************************************/
 static const char revision[] = "$Id$";
-static const char g_revision[] = "0.3";
+static const char g_revision[] = "0.4";
 
 /************************************************************************
  * Includes
@@ -113,6 +113,29 @@ typedef apr_status_t (*parp_parser_f)(parp_t *, apr_table_t *, char *,
                                       apr_size_t);
 
 static parp_parser_f parp_get_parser(parp_t *self, const char *ct); 
+
+/**
+ * Verifies if we may expext any body request data.
+ */
+static int parp_has_body(parp_t *self) {
+  request_rec *r = self->r;
+  const char *tenc = apr_table_get(r->headers_in, "Transfer-Encoding");
+  const char *lenp = apr_table_get(r->headers_in, "Content-Length");
+  if(tenc) {
+    if(strcasecmp(tenc, "chunked") == 0) {
+      return 1;
+    }
+  }
+  if(lenp) {
+    char *endstr;
+    apr_off_t remaining;
+    if((apr_strtoff(&remaining, lenp, &endstr, 10) == APR_SUCCESS) &&
+       (remaining > 0)) {
+      return 1;
+    }
+  }
+  return 0;
+}
 
 /**
  * Read payload of this request
@@ -612,13 +635,13 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
 
   request_rec *r = self->r;
   
-  if (r->method_number == M_POST) {
-    if (r->args) {
-      if ((status = parp_urlencode(self, r->headers_in, r->args, strlen(r->args))) 
-	  != APR_SUCCESS) {
-	return status;
-      }
+  if (r->args) {
+    if ((status = parp_urlencode(self, r->headers_in, r->args, strlen(r->args))) 
+        != APR_SUCCESS) {
+      return status;
     }
+  }
+  if(parp_has_body(self)) {
     if ((status = parp_get_payload(self, &data, &len)) != APR_SUCCESS) {
       return status;
     }
@@ -634,22 +657,13 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
       data[len] = 0;
     }
     parser = parp_get_parser(self, apr_table_get(r->headers_in, 
-	                     "Content-Type"));  
+                                                 "Content-Type"));  
     if ((status = parser(self, r->headers_in, data, len)) != APR_SUCCESS) {
       /* only set data to self pointer if untouched by parser, 
        * because parser could modify body data */
       if (status == APR_ENOTIMPL) {
       }
       return status;
-    }
-
-  }
-  else if (r->method_number == M_GET) {
-    if (r->args) {
-      if ((status = parp_urlencode(self, r->headers_in, r->args, strlen(r->args))) 
-	  != APR_SUCCESS) {
-	return status;
-      }
     }
   }
   return APR_SUCCESS;
@@ -819,7 +833,7 @@ static int parp_header_parser(request_rec * r) {
         parp_srv_config *sconf = ap_get_module_config(r->server->module_config,
                                                       &parp_module);
         char *error = parp_get_error(parp);
-        
+
         ap_log_rerror(APLOG_MARK, sconf->onerror == 200 ? APLOG_WARNING : APLOG_ERR, 0, r,
                       PARP_LOG_PFX(010)"parser error, rc=%d (%s)",
                       sconf->onerror == -1 ? 500 : sconf->onerror,
