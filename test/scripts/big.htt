@@ -10,48 +10,10 @@ __Host: localhost
 __Content-Type: application/x-www-form-urlencoded
 __Content-Length: AUTO
 __
-_-param1=value1&param2=value2&param3=value3&param4&
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
-__$BUF
+_-param1=value1&param2=value2&param3=value3&param4&foo=
+_LOOP 200
+_-$BUF
+_END LOOP
 _WAIT
 _END LOOP
 
