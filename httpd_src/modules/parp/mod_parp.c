@@ -182,9 +182,9 @@ static apr_status_t parp_get_payload(parp_t *self, char **data,
 	if (APR_BUCKET_IS_EOS(b)) {
 	    seen_eos = 1;
 	}
-      }
 
-      APR_BRIGADE_CONCAT(self->bb, bb);
+	apr_brigade_write(self->bb, NULL, NULL, buf, buflen);
+      }
       apr_brigade_cleanup(bb);
     }
     else {
