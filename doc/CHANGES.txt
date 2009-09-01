@@ -1,3 +1,6 @@
+Version 0.6
+  - Export body data reader.
+
 Version 0.5
   - Security fix in the get payload function, apache
     will reuse data buffer of buckets on the next burst

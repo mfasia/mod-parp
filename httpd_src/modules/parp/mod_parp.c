@@ -29,7 +29,7 @@
  * Version
  ***********************************************************************/
 static const char revision[] = "$Id$";
-static const char g_revision[] = "0.5";
+static const char g_revision[] = "0.6";
 
 /************************************************************************
  * Includes
@@ -149,61 +149,17 @@ static int parp_has_body(parp_t *self) {
 static apr_status_t parp_get_payload(parp_t *self, char **data, 
                                      apr_size_t *len) {
   apr_status_t status;
-  apr_bucket_brigade *bb;
-  apr_bucket *b;
-  const char *buf;
-  apr_size_t buflen;
-  const char *enc;
-  const char *len_str;
 
   request_rec *r = self->r;
-  int seen_eos = 0;
-
-  if ((status = ap_setup_client_block(r, REQUEST_CHUNKED_DECHUNK)) != OK) {
-    self->error = apr_pstrdup(r->pool, "ap_setup_client_block failed");
+  
+  if ((status = parp_read_payload(r, self->bb, &self->error)) 
+      != APR_SUCCESS) {
     return status;
   }
-
-  bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
-
-  do {
-    status = ap_get_brigade(r->input_filters, bb, AP_MODE_READBYTES, APR_BLOCK_READ, HUGE_STRING_LEN);
- 
-    if (status == APR_SUCCESS) {
-      for(b = APR_BRIGADE_FIRST(bb); b != APR_BRIGADE_SENTINEL(bb);
-	  b = APR_BUCKET_NEXT(b))
-      {
-	status = apr_bucket_read(b, &buf, &buflen, APR_BLOCK_READ);
-	if (status != APR_SUCCESS) {   
-	  self->error = apr_pstrdup(r->pool, "Input filter: Failed reading input");
-          return status;
-	}
-
-	if (APR_BUCKET_IS_EOS(b)) {
-	    seen_eos = 1;
-	}
-
-	apr_brigade_write(self->bb, NULL, NULL, buf, buflen);
-      }
-      apr_brigade_cleanup(bb);
-    }
-    else {
-      seen_eos = 1;
-    }
-  } while (!seen_eos);
-  
   
   if ((status = apr_brigade_pflatten(self->bb, data, len, r->pool)) 
       != APR_SUCCESS) {
     self->error = apr_pstrdup(r->pool, "Input filter: apr_brigade_pflatten failed");
-  }
-
-  /* correct content-length header if deflate filter runs before */
-  enc = apr_table_get(r->headers_in, "Transfer-Encoding");
-  if (!enc || strcasecmp(enc, "chunked") != 0) {
-    len_str = apr_itoa(r->pool, *len);
-    apr_table_set(r->headers_in, "Content-Length", len_str);
-    r->remaining = *len;
   }
 
   return status;
@@ -591,6 +547,82 @@ static parp_parser_f parp_get_parser(parp_t *self, const char *ct) {
 /**************************************************************************
  * Public
  **************************************************************************/
+
+/**
+ * Read payload of this request
+ *
+ * @param r IN request record
+ * @param out IN bucket brigade to fill
+ * @param error OUT error text if status != APR_SUCCESS
+ *
+ * @return APR_SUCCESS, any apr status code on error
+ */
+AP_DECLARE(apr_status_t )parp_read_payload(request_rec *r, 
+                                           apr_bucket_brigade *out, 
+			      	           char **error) {
+  apr_status_t status;
+  apr_bucket_brigade *bb;
+  apr_bucket *b;
+  const char *buf;
+  apr_size_t len;
+  apr_off_t off;
+  const char *enc;
+  const char *len_str;
+
+  int seen_eos = 0;
+
+  if ((status = ap_setup_client_block(r, REQUEST_CHUNKED_DECHUNK)) != OK) {
+    *error = apr_pstrdup(r->pool, "ap_setup_client_block failed");
+    return status;
+  }
+
+  bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
+
+  do {
+    status = ap_get_brigade(r->input_filters, bb, AP_MODE_READBYTES, APR_BLOCK_READ, HUGE_STRING_LEN);
+ 
+    if (status == APR_SUCCESS) {
+      while (!APR_BRIGADE_EMPTY(bb)) {
+        b = APR_BRIGADE_FIRST(bb);
+	APR_BUCKET_REMOVE(b);
+
+	if (APR_BUCKET_IS_EOS(b)) {
+	  seen_eos = 1;
+	  APR_BRIGADE_INSERT_TAIL(out, b);
+	}
+	else if (APR_BUCKET_IS_FLUSH(b)) {
+	  APR_BRIGADE_INSERT_TAIL(out, b);
+	}
+	else {
+	  status = apr_bucket_read(b, &buf, &len, APR_BLOCK_READ);
+	  if (status != APR_SUCCESS) {   
+	    *error = apr_pstrdup(r->pool, "Input filter: Failed reading input");
+	    return status;
+	  }
+	  apr_brigade_write(out, NULL, NULL, buf, len);
+	  apr_bucket_destroy(b);
+	}
+      }
+      apr_brigade_cleanup(bb);
+    }
+    else {
+      seen_eos = 1;
+    }
+  } while (!seen_eos);
+
+  apr_brigade_length(out, 1, &off);
+   
+  /* correct content-length header if deflate filter runs before */
+  enc = apr_table_get(r->headers_in, "Transfer-Encoding");
+  if (!enc || strcasecmp(enc, "chunked") != 0) {
+    len_str = apr_off_t_toa(r->pool, off);
+    apr_table_set(r->headers_in, "Content-Length", len_str);
+    r->remaining = off;
+  }
+
+  return status;
+}
+
 /**
  * Creates a new parameter parser.
  *
