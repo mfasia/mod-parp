@@ -725,7 +725,7 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
   apr_off_t read = 0;
   parp_t *self = f->ctx;
 
-  if(self == NULL) {
+  if(self == NULL || (f->r && f->r->status != 200)) {
     /* nothing to do ... */
     return ap_get_brigade(f->next, bb, mode, block, nbytes);
   }
