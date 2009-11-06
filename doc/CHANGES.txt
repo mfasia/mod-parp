@@ -1,3 +1,7 @@
+Version 0.7
+  - Ignore input filter date on error, else keepalive connection could hang 
+    for ever (actually until timeout)
+
 Version 0.6
   - Export body data reader.
 
