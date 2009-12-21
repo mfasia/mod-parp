@@ -1,5 +1,5 @@
 httpd
-httpd-2.2.8
+httpd-2.2.*
 openssl
 openssl-0.9.8e
 mod_parp-*-src.tar.gz
