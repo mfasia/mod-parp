@@ -2,7 +2,7 @@
 
 cd `dirname $0`
 
-HTTEST=../httpd/support/httest
+HTTEST=./bin/httest
 
 ${HTTEST} $@
 RC=$?

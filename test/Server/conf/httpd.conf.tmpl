@@ -21,7 +21,7 @@ MaxKeepAliveRequests    100
 KeepAliveTimeout        64
 DefaultType             text/plain
 
-LogFormat               "%h %l %u %t \"%r\" %>s %b cc=\"%{ClientCorrelator}i\" rc=\"%{RequestCorrelator}i\" \"%{User-Agent}i\" %{HSP_CL_AC}o %{HSP_CL_RF}o %{HSP_CL_SE}o %T \"%{HSP_UE_unparsed_uri}i\" #%P"
+LogFormat               "%h %l %u %t \"%r\" %>s %b \"%{User-Agent}i\" %T body=%{PARPContentLength}e #%P"
 
 LogLevel                debug 
 ErrorLog                ##SERVER_ROOT##/logs/error_log
@@ -40,10 +40,8 @@ CoreDumpDirectory       ##SERVER_ROOT##/logs
 # Enable extended statistics for mod_status
 ExtendedStatus          On
 
-NameVirtualHost localhost:16100
-Listen          localhost:16100
-
-<VirtualHost localhost:16100>
+Listen       127.0.0.1:16100
+<VirtualHost 127.0.0.1:16100>
    ServerName localhost
    ServerAdmin webmaster@localhost
 

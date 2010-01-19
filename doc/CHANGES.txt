@@ -1,3 +1,8 @@
+Version 0.8
+  - Stores the content-length of the processed data within the
+    PARPContentLength environment variable (may be used to
+    adjust the content-length header when using mod_deflate).
+
 Version 0.7
   - Ignore input filter date on error, else keepalive connection could hang 
     for ever (actually until timeout)

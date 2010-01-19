@@ -29,7 +29,7 @@
  * Version
  ***********************************************************************/
 static const char revision[] = "$Id$";
-static const char g_revision[] = "0.7";
+static const char g_revision[] = "0.8";
 
 /************************************************************************
  * Includes
@@ -859,7 +859,12 @@ static int parp_header_parser(request_rec * r) {
       ap_set_module_config(r->request_config, &parp_module, parp);
       ap_add_input_filter("parp-forward-filter", parp, r, r->connection);
       if(status == APR_SUCCESS) {
+        apr_off_t contentlen;
         parp_get_params(parp, &tl);
+        apr_brigade_length(parp->bb, 1, &contentlen);
+        apr_table_set(r->subprocess_env,
+                      "PARPContentLength",
+                      apr_psprintf(r->pool, "%"APR_OFF_T_FMT, contentlen));
         status = parp_run_hp_hook(r, tl);
       } else {
         parp_srv_config *sconf = ap_get_module_config(r->server->module_config,
