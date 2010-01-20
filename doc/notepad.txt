@@ -1,0 +1,5 @@
+- new API (item table) including content type (for x-www-form-urlencoded)
+
+----------------
+
+scp index.html pbuchbinder,parp@web.sourceforge.net:htdocs
