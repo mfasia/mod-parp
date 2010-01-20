@@ -88,7 +88,8 @@ PARP_ExitOnError         200
 
 <p>
 Memory:<br>
-mod_parp stores the whole request message body in the servers memory. Use the "LimitRequestBody" directive to limit the maximum data size!
+mod_parp stores the whole request message body in the servers memory. Use the "LimitRequestBody" directive to <b>limit the maximum data size!</b><br>
+You may use mod_deflate in order to decompress incomming data. mod_parp calulates the new Content-Length (total number of bytes) and stores it within the <i>PARPContentLength</i> Apache environment variable.
 </p>
 
 
@@ -202,6 +203,6 @@ under the <a href="LICENSE.txt">Apache License Version 2.0</a>.
 </table>
 <hr>
 <a href="http://sourceforge.net/projects/parp/"><img align="right" src="http://sflogo.sourceforge.net/sflogo.php?group_id=230159&amp;type=1" width="88" height="31" border="0" alt="parp at SourceForge.net" /></a>
-<SMALL><SMALL>&copy; 2008, PARP</SMALL></SMALL>
+<SMALL><SMALL>&copy; 2008-2010, PARP</SMALL></SMALL>
 </body>
 </html>
