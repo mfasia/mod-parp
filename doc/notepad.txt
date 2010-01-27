@@ -1,4 +1,4 @@
-- new API (item table) including content type (for x-www-form-urlencoded)
+- new API (item table) including content type (for form-data)
 
 ----------------
 
