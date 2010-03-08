@@ -29,7 +29,7 @@
  * Version
  ***********************************************************************/
 static const char revision[] = "$Id$";
-static const char g_revision[] = "0.8";
+static const char g_revision[] = "0.9";
 
 /************************************************************************
  * Includes
@@ -815,7 +815,7 @@ AP_DECLARE(apr_table_t *)parp_hp_table(request_rec *r) {
  *
  * @return body data or NULL
  */
-AP_DECLARE(char *)parp_body_data(request_rec *r, apr_size_t *len) {
+AP_DECLARE(const char *)parp_body_data(request_rec *r, apr_size_t *len) {
   parp_t *parp = ap_get_module_config(r->request_config, &parp_module);
   *len = 0;
   if(parp && parp->data) {

@@ -44,6 +44,7 @@ static const char g_revision[] = "0.1";
 
 /* apr */
 #include <apr_hooks.h>
+#include <apr_strings.h>
 
 /* param parser module */
 #include "mod_parp.h"
@@ -144,7 +145,7 @@ static int parp_appl_handler(request_rec * r) {
    * Access the body data using the optional function
    */
   parp_appl_body_data =  APR_RETRIEVE_OPTIONAL_FN(parp_body_data);
-  data = parp_appl_body_data(r, &len);
+  data = apr_pstrndup(r->pool, parp_appl_body_data(r, &len), len);
   if (data) {
     int i;
     data[len] = 0;
