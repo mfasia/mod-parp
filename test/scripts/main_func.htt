@@ -93,8 +93,8 @@ __Content-Type: multipart/form-data; boundary=foo
 __Content-Length: AUTO
 __
 __--foo
-__Content-Type: multipart/mixed; boundary=foo2
-__content-disposition: form-data; name="multi"
+__content-Type: multipart/mixed; boundary=foo2
+__content-Disposition: form-data; name="multi"
 __
 __--foo2
 __content-disposition: form-data; name="paramA"
@@ -102,15 +102,15 @@ __
 __valueA
 __--foo2--
 __--foo
-__content-disposition: form-data; name="param1"
+__content-disposition: name="param1"; form-data;
 __
 __value1
 __--foo
-__content-disposition: form-data; name="param2"
+__content-disposition: form-data;    NAME="param2"
 __
 __value2
 __--foo
-__content-disposition: form-data; name="param3"
+__content-disposition:    Form-data; name="param3"
 __
 __value3
 __--foo--
