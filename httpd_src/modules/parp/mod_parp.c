@@ -2,7 +2,16 @@
  * The line above sets XEmacs indention to offset 2,
  * and does not insert tabs
  */
-/* Licensed to the Apache Software Foundation (ASF) under one or more
+/*  ____  _____  ____ ____  
+ * |H _ \(____ |/ ___)  _ \ 
+ * |T|_| / ___ | |   | |_| |
+ * |T __/\_____|_|   |  __/ 
+ * |P|ParameterParser|_|    
+ * http://parp.sourceforge.net
+ *
+ * Copyright (C) 2008-2010 Christian Liesch/Pascal Buchbinder
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements. 
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
@@ -15,14 +24,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */
-
-/*  ____  _____  ____ ____  
- * |H _ \(____ |/ ___)  _ \ 
- * |T|_| / ___ | |   | |_| |
- * |T __/\_____|_|   |  __/ 
- * |P|ParameterParser|_|    
- * http://parp.sourceforge.net
  */
 
 /************************************************************************
@@ -378,7 +379,7 @@ static apr_status_t parp_urlencode(parp_t *self, apr_table_t *headers,
     /* get key/value */
     val = pair;
     key = ap_getword_nc(self->pool, &val, '=');
-    if (key) {
+    if (key && (key[0] >= ' ')) {
       /* store it to a table */
       apr_table_addn(self->params, key, val);
     }
@@ -697,20 +698,7 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
     if ((status = parp_get_payload(self, &data, &len)) != APR_SUCCESS) {
       return status;
     }
-
-    if (len > 2 && strncmp(&data[len-2], "\r\n", 2) == 0) {
-      /* cut away the tailing \r\n */
-      data[len-2] = 0;
-    }
-    else if (len > 1 && data[len -1] == '\n'){
-      /* cut away the tailing \n */
-      data[len-1] = 0;
-    }
-//    else {
-//      data[len] = 0;
-//    }
-    parser = parp_get_parser(self, apr_table_get(r->headers_in, 
-                                                 "Content-Type"));  
+    parser = parp_get_parser(self, apr_table_get(r->headers_in, "Content-Type"));  
     if ((status = parser(self, r->headers_in, data, len)) != APR_SUCCESS) {
       /* only set data to self pointer if untouched by parser, 
        * because parser could modify body data */
