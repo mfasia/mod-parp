@@ -138,7 +138,27 @@ static int parp_has_body(parp_t *self) {
 }
 
 /**
- * Read payload of this request
+ * apr_brigade_pflatten() to null terminated string
+ */
+apr_status_t parp_flatten(apr_bucket_brigade *bb, char **c, apr_size_t *len, apr_pool_t *pool) {
+  apr_off_t actual;
+  apr_size_t total;
+  apr_status_t rv;
+
+  apr_brigade_length(bb, 1, &actual);
+  total = (apr_size_t)actual;
+  *c = apr_palloc(pool, total + 1);
+  rv = apr_brigade_flatten(bb, *c, &total);
+  *len = total;
+  if (rv != APR_SUCCESS) {
+    return rv;
+  }
+  (*c)[total] = '\0';
+  return APR_SUCCESS;
+}
+
+/**
+ * Read payload of this request (null terminated)
  *
  * @param r IN request record
  * @param data OUT flatten payload
@@ -157,7 +177,7 @@ static apr_status_t parp_get_payload(parp_t *self, char **data,
     return status;
   }
   
-  if ((status = apr_brigade_pflatten(self->bb, data, len, r->pool)) 
+  if ((status = parp_flatten(self->bb, data, len, r->pool)) 
       != APR_SUCCESS) {
     self->error = apr_pstrdup(r->pool, "Input filter: apr_brigade_pflatten failed");
   }
@@ -677,17 +697,18 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
     if ((status = parp_get_payload(self, &data, &len)) != APR_SUCCESS) {
       return status;
     }
+
     if (len > 2 && strncmp(&data[len-2], "\r\n", 2) == 0) {
-      /* cut away the leading \r\n */
+      /* cut away the tailing \r\n */
       data[len-2] = 0;
     }
     else if (len > 1 && data[len -1] == '\n'){
-      /* cut away the leading \n */
+      /* cut away the tailing \n */
       data[len-1] = 0;
     }
-    else {
-      data[len] = 0;
-    }
+//    else {
+//      data[len] = 0;
+//    }
     parser = parp_get_parser(self, apr_table_get(r->headers_in, 
                                                  "Content-Type"));  
     if ((status = parser(self, r->headers_in, data, len)) != APR_SUCCESS) {
