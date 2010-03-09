@@ -330,8 +330,7 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
   return APR_SUCCESS;
 }
 
-static char *parp_strtok(apr_pool_t *pool, char *str, const char *sep, char **last)
-{
+static char *parp_strtok(apr_pool_t *pool, char *str, const char *sep, char **last) {
     char *token;
 
     if (!str)           /* subsequent call */
@@ -352,9 +351,8 @@ static char *parp_strtok(apr_pool_t *pool, char *str, const char *sep, char **la
     *last = token + 1;
     while (**last && !strchr(sep, **last))
         ++*last;
-
+    token = apr_pstrndup(pool, token, *last - token);
     if (**last) {
-        **last = '\0';
         ++*last;
     }
 
@@ -375,14 +373,14 @@ static char *parp_strtok(apr_pool_t *pool, char *str, const char *sep, char **la
 static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
                                      apr_table_t **headers) {
   char *last = NULL;
-  char *header;
-  char *key;
-  char *val;
+  char *header = NULL;
+  char *key = NULL;
+  char *val = NULL;
   char *data = b->data;
 
   apr_table_t *tl = apr_table_make(self->pool, 3);
   *headers = tl;
-  header = apr_strtok(data, "\r\n", &last);
+  header = parp_strtok(self->pool, data, "\r\n", &last);
   while (header) {
     key = apr_strtok(header, ":", &val);
     if (val) {
@@ -398,7 +396,7 @@ static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
       ++last;
       break;
     }
-    header = apr_strtok(NULL, "\r\n", &last);
+    header = parp_strtok(self->pool, NULL, "\r\n", &last);
   }
   if (last && (*last == '\n')) {
     ++last;
