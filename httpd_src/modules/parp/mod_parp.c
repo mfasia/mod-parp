@@ -109,6 +109,11 @@ APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(parp, PARP, apr_status_t, hp_hook,
                                     (r, table),
                                     OK, DECLINED)
 
+APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(parp, PARP, apr_status_t, modify_body_hook,
+                                    (request_rec *r, apr_array_header_t *array),
+                                    (r, array),
+                                    OK, DECLINED)
+
 /************************************************************************
  * functions
  ***********************************************************************/
@@ -380,7 +385,7 @@ static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
 static apr_status_t parp_urlencode(parp_t *self, apr_table_t *headers,
                                    const char *data, apr_size_t len) {
   char *key;
-  const char *val;
+  char *val;
   char *pair;
   const char *rest = data;
   
@@ -389,9 +394,18 @@ static apr_status_t parp_urlencode(parp_t *self, apr_table_t *headers,
     pair = ap_getword(self->pool, &rest, '&');
     /* get key/value */
     val = pair;
-    key = ap_getword(self->pool, &val, '=');
+    key = ap_getword_nc(self->pool, &val, '=');
     if (key && (key[0] >= ' ')) {
       /* store it to a table */
+      int val_len = strlen(val);
+      if (val_len >= 2 && strcmp(&val[val_len - 2], "\r\n") == 0) {
+        if(self->rw_body_params) {
+          val[val_len - 2] = 0;
+        }
+      }
+      else if (val_len >= 1 && val[val_len - 1] == '\n') {
+        val[val_len - 1] = 0;
+      }
       apr_table_addn(self->params, key, val);
       /* store rw ref */
       if(self->rw_body_params) {
@@ -914,6 +928,9 @@ static int parp_header_parser(request_rec * r) {
                       "PARPContentLength",
                       apr_psprintf(r->pool, "%"APR_OFF_T_FMT, contentlen));
         status = parp_run_hp_hook(r, tl);
+        if(parp->rw_body_params) {
+          parp_run_modify_body_hook(r, parp->rw_body_params);
+        }
       } else {
         parp_srv_config *sconf = ap_get_module_config(r->server->module_config,
                                                       &parp_module);
