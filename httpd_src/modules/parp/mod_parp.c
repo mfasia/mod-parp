@@ -298,13 +298,21 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
 	continue;
       }
       /* prepare data finalize string with 0 */
-      data[i - match] = 0;
+      if(self->rw_body_params == NULL) {
+        /* don't modify the raw data since we still need them */
+        data[i - match] = 0;
+      }
 
       /* got it, store it */
-      if (data[start]) {
+      if (data[start] && ((i - match) - start)) {
         boundary = apr_pcalloc(self->pool, sizeof(*boundary));
 	boundary->len = (i - match) - start;
-	boundary->data = &data[start];
+        if(self->rw_body_params) {
+          /* don't modify the raw data since we still need them */
+          boundary->data = apr_pstrndup(self->pool, &data[start], boundary->len);
+        } else {
+          boundary->data = &data[start];
+        }
 	apr_table_addn(tl, tag, (char *) boundary);
       }
       i += incr;
@@ -343,7 +351,6 @@ static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
 
   apr_table_t *tl = apr_table_make(self->pool, 3);
   *headers = tl;
-  
   header = apr_strtok(data, "\r\n", &last);
   while (header) {
     key = apr_strtok(header, ":", &val);
@@ -480,6 +487,7 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
   boundary = apr_pstrcat(self->pool, "--", boundary, NULL);
 
   if ((status = parp_read_boundaries(self, data, len, boundary, &bs)) != APR_SUCCESS) {
+    self->error = apr_pstrdup(self->pool, "failed to read boundaries");
     return status;
   }
   
@@ -489,6 +497,7 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
     /* read boundary headers */
     b = (parp_block_t *)e[i].val;
     if ((status = parp_get_headers(self, b, &hs))) {
+      self->error = apr_pstrdup(self->pool, "failed to read headers within boundary");
       return status;
     }
 
@@ -501,6 +510,7 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
     }
     
     if (!(ctd = apr_table_get(hs, "Content-Disposition"))) {
+      self->error = apr_pstrdup(self->pool, "failed to read content disposition");
       return APR_EINVAL;
     }
 

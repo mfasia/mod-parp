@@ -231,6 +231,7 @@ static void parp_appl_register_hooks(apr_pool_t * p) {
   ap_hook_post_read_request(parp_appl_post_read_request, NULL, post, APR_HOOK_LAST);
   ap_hook_handler(parp_appl_handler, NULL, NULL, APR_HOOK_LAST);
   APR_OPTIONAL_HOOK(parp, hp_hook, parp_appl_test, NULL, NULL, APR_HOOK_MIDDLE);
+  // TODO: run the test with and without this hook !!!
   APR_OPTIONAL_HOOK(parp, modify_body_hook, parp_appl_modify, NULL, NULL, APR_HOOK_MIDDLE);
 }
 

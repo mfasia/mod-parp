@@ -38,7 +38,7 @@ __Content-Type: multipart/form-data; boundary=foo
 __Content-Length: AUTO
 __
 __--foo
-__content-Disposition: form-data; name="paramA"
+__content-disposition: form-data; name="paramA"
 __
 __changeme
 __--foo
@@ -94,10 +94,10 @@ __==OK==
 
 _RES
 _EXPECT . "POST /htt/modify\?param4=value4&param1=value5"
-_EXPECT . "content-Disposition: form-data; name=\"paramA\""
+_EXPECT . "content-disposition: form-data; name=\"paramA\""
 _EXPECT . "!changeme"
 _EXPECT . "this_has_changed"
-_EXPECT . "content-Disposition: form-data; name=\"paramB\""
+_EXPECT . "content-disposition: form-data; name=\"paramB\""
 _EXPECT . "valueB"
 _WAIT
 __HTTP/1.1 200 OK
