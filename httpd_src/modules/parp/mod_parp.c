@@ -335,7 +335,7 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
  */
 static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
                                      apr_table_t **headers) {
-  char *last;
+  char *last = NULL;
   char *header;
   char *key;
   char *val;
@@ -362,12 +362,15 @@ static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
     }
     header = apr_strtok(NULL, "\r\n", &last);
   }
-  if (*last == '\n') {
+  if (last && (*last == '\n')) {
     ++last;
+    b->len -= last - data;
+    b->data = last;
+  } else {
+    b->len = 0;
+    b->data = NULL;
   }
   
-  b->len -= last - data;
-  b->data = last;
   
   return APR_SUCCESS;
 }
