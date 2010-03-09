@@ -2,7 +2,16 @@
  * The line above sets XEmacs indention to offset 2,
  * and does not insert tabs
  */
-/* Licensed to the Apache Software Foundation (ASF) under one or more
+/*  ____  _____  ____ ____  
+ * |H _ \(____ |/ ___)  _ \ 
+ * |T|_| / ___ | |   | |_| |
+ * |T __/\_____|_|   |  __/ 
+ * |P|ParameterParser|_|    
+ * http://parp.sourceforge.net
+ *
+ * Copyright (C) 2008-2010 Christian Liesch/Pascal Buchbinder
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements. 
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
@@ -15,14 +24,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */
-
-/*  ____  _____  ____ ____  
- * |H _ \(____ |/ ___)  _ \ 
- * |T|_| / ___ | |   | |_| |
- * |T __/\_____|_|   |  __/ 
- * |P|ParameterParser|_|    
- * http://parp.sourceforge.net
  */
 
 /************************************************************************
@@ -58,6 +59,7 @@ static const char g_revision[] = "0.1";
  * globals
  ***********************************************************************/
 module AP_MODULE_DECLARE_DATA parp_appl_module;
+static int  m_disable_mod = 0;
 
 
 /************************************************************************
@@ -208,6 +210,14 @@ static int parp_appl_post_read_request(request_rec * r) {
   return DECLINED;
 }
 
+static int parp_appl_post_config(apr_pool_t *pconf, apr_pool_t *plog,
+                                 apr_pool_t *ptemp, server_rec *bs) {
+  if(!m_disable_mod) {
+    APR_OPTIONAL_HOOK(parp, modify_body_hook, parp_appl_modify, NULL, NULL, APR_HOOK_MIDDLE);
+  }
+  return DECLINED;
+}
+
 /************************************************************************
  * directiv handlers 
  ***********************************************************************/
@@ -219,7 +229,15 @@ static void *parp_appl_srv_config_merge(apr_pool_t *p, void *basev, void *addv) 
   return addv;
 }
 
+const char *parp_appl_disable_modify_cmd(cmd_parms *cmd, void *dcfg, int flag) {
+  m_disable_mod = flag;
+  return NULL;
+}
+
 static const command_rec parp_appl_config_cmds[] = {
+  AP_INIT_FLAG("DisableModifyBodyHook", parp_appl_disable_modify_cmd, NULL,
+               RSRC_CONF,
+               ""),
   { NULL }
 };
 
@@ -231,8 +249,7 @@ static void parp_appl_register_hooks(apr_pool_t * p) {
   ap_hook_post_read_request(parp_appl_post_read_request, NULL, post, APR_HOOK_LAST);
   ap_hook_handler(parp_appl_handler, NULL, NULL, APR_HOOK_LAST);
   APR_OPTIONAL_HOOK(parp, hp_hook, parp_appl_test, NULL, NULL, APR_HOOK_MIDDLE);
-  // TODO: run the test with and without this hook !!!
-  APR_OPTIONAL_HOOK(parp, modify_body_hook, parp_appl_modify, NULL, NULL, APR_HOOK_MIDDLE);
+  ap_hook_post_config(parp_appl_post_config, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
 /************************************************************************

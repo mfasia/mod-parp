@@ -7,8 +7,6 @@ ERRORS=0
 WARNINGS=0
 
 ./ctl.sh start
-#ps -Ao vsz,comm,pid,ppid | grep `cat Server/logs/pid` | sort -n | tail -1 | awk '{print $1 " " $3}'
-
 STDS="main_func.htt loop.htt file.htt big.htt textplain.htt texthtml.htt body.htt mix.htt PARPContentLength.htt modify.htt"
 for E in $STDS; do
   ./htt.sh -se scripts/${E}
@@ -17,17 +15,18 @@ for E in $STDS; do
     echo "FAILED $E"
   fi
 done
+./ctl.sh stop
+sleep 1
+./ctl.sh start -D DisableModifyBodyHook
+STDS="main_func.htt loop.htt file.htt big.htt textplain.htt texthtml.htt body.htt mix.htt PARPContentLength.htt"
+for E in $STDS; do
+  ./htt.sh -se scripts/${E}
+  if [ $? -ne 0 ]; then
+    ERRORS=`expr $ERRORS + 1`
+    echo "FAILED $E"
+  fi
+done
 
-#for E in `seq 7`; do
-#ps -Ao vsz,comm,pid,ppid | grep `cat Server/logs/pid` | sort -n | tail -1 | awk '{print $1 " " $3}'
-#./htt.sh -s scripts/big.htt
-#if [ $? -ne 0 ]; then
-#    ERRORS=`expr $ERRORS + 1`
-#    echo "FAILED big.htt"
-#fi
-#done
-#
-#ps -Ao vsz,comm,pid,ppid | grep `cat Server/logs/pid` | sort -n | tail -1 | awk '{print $1 " " $3}'
 ./ctl.sh stop
 sleep 1
 ./ctl.sh start -D noerror

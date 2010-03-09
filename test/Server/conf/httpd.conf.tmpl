@@ -39,7 +39,9 @@ CoreDumpDirectory       ##SERVER_ROOT##/logs
 
 # Enable extended statistics for mod_status
 ExtendedStatus          On
-
+<IfDefine DisableModifyBodyHook>
+DisableModifyBodyHook on
+</IfDefine>
 Listen       127.0.0.1:16100
 <VirtualHost 127.0.0.1:16100>
    ServerName localhost
