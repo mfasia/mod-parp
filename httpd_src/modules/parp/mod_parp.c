@@ -72,10 +72,12 @@ typedef struct {
   request_rec *r;
   apr_bucket_brigade *bb;
   char *raw_data;                     /** raw data received from the client */
-  apr_size_t raw_data_len;
-  apr_table_t *params;
-  apr_array_header_t *rw_body_params; /** table of parp_body_entry_t entries (is null if no body available) */
-  apr_table_t *parsers;
+  apr_size_t raw_data_len;            /** total length of the raw data (excluding modifications) */
+  int use_raw;                        /** indicates the input filter to read the raw data instead of the bb */
+  apr_table_t *params;                /** readonly parameter table (query+body) */
+  apr_array_header_t *rw_body_params; /** writable table of parp_body_entry_t entries (null if no body available
+                                          of no module has registered) */
+  apr_table_t *parsers;               /** body parser per content type */
   char *error; 
   int flags;
   int recursion;
@@ -719,6 +721,7 @@ AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags) {
   self->flags = flags;
   self->raw_data = NULL;
   self->raw_data_len = 0;
+  self->use_raw = 0;
   self->data = NULL;
   self->len = 0;
   return self;
@@ -738,7 +741,12 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
   apr_status_t status;
   parp_parser_f parser;
   request_rec *r = self->r;
-  
+  int modify = 1;
+  apr_array_header_t *hs = apr_optional_hook_get("modify_body_hook");
+  if((hs == NULL) || (hs->nelts == 0)) {
+    /* no module has registered */
+    modify = 0;
+  }
   if (r->args) {
     if ((status = parp_urlencode(self, r->headers_in, r->args, strlen(r->args))) 
         != APR_SUCCESS) {
@@ -746,8 +754,9 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
     }
   }
   if(parp_has_body(self)) {
-    /* TODO: sometimes we don't need rw access which allows some memory optimzaion */
-    self->rw_body_params = apr_array_make(r->pool, 50, sizeof(parp_body_entry_t));
+    if(modify) {
+      self->rw_body_params = apr_array_make(r->pool, 50, sizeof(parp_body_entry_t));
+    }
     if ((status = parp_get_payload(self)) != APR_SUCCESS) {
       return status;
     }
@@ -761,6 +770,25 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
     }
   }
   return APR_SUCCESS;
+}
+
+/**
+ * Returns the pointer to the next modified element.
+ * TODO: caching (don't iterate through all elements for every call)
+ */
+static parp_body_entry_t *parp_get_modified(parp_t *self) {
+  int i;
+  parp_body_entry_t *entries = (parp_body_entry_t *)self->rw_body_params->elts;
+  for(i = 0; i < self->rw_body_params->nelts; ++i) {
+    parp_body_entry_t *b = &entries[i];
+    if(b->new_value) {
+      if(b->value_addr > self->raw_data) {
+        return b;
+      }
+    }
+  }
+  /* no element to insert */
+  return NULL;
 }
 
 /**
@@ -792,32 +820,55 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
     return ap_get_brigade(f->next, bb, mode, block, nbytes);
   }
   
-  /* do never send a bigger brigade than request with "nbytes"! */
-  while (read < nbytes && !APR_BRIGADE_EMPTY(self->bb)) {
-    e = APR_BRIGADE_FIRST(self->bb);
-    rv = apr_bucket_read(e, &buf, &len, block);
-
-    if (rv != APR_SUCCESS) {
-      return rv;
+  if(self->use_raw) {
+    /* forward data from the raw buffer and apply modifications */
+    apr_off_t bytes = nbytes <= self->raw_data_len ? nbytes : self->raw_data_len;
+    parp_body_entry_t *element = parp_get_modified(self);
+    if(element && ((element->value_addr - self->raw_data) < bytes)) {
+      /* element in range! */
+      bytes = element->value_addr - self->raw_data;
+    } else {
+      element = NULL;
     }
-
-    if (len + read > nbytes) {
-      apr_bucket_split(e, nbytes - read);
+    rv = apr_brigade_write(bb, NULL, NULL, self->raw_data, bytes); // TODO: apr_brigade_write() makes a copy
+    self->raw_data = self->raw_data + bytes;
+    self->raw_data_len -= bytes;
+    if(element) {
+      int slen = strlen(element->new_value);
+      int olen = strlen(element->value);
+      /* TODO: handle the case where size exeedes nbytes */
+      rv = apr_brigade_write(bb, NULL, NULL, element->new_value, slen);
+      self->raw_data = self->raw_data + olen;
+      self->raw_data_len -= olen;
+    }
+    if(self->raw_data_len == 0) {
+      /* our work is done so remove this filter */
+      ap_remove_input_filter(f);
+    }
+  } else {
+    /* transparent forwarding */
+    /* do never send a bigger brigade than request with "nbytes"! */
+    while (read < nbytes && !APR_BRIGADE_EMPTY(self->bb)) {
+      e = APR_BRIGADE_FIRST(self->bb);
+      rv = apr_bucket_read(e, &buf, &len, block);
+      if (rv != APR_SUCCESS) {
+        return rv;
+      }
+      if (len + read > nbytes) {
+        apr_bucket_split(e, nbytes - read);
+        APR_BUCKET_REMOVE(e);
+        APR_BRIGADE_INSERT_TAIL(bb, e);
+        return APR_SUCCESS;
+      }
       APR_BUCKET_REMOVE(e);
       APR_BRIGADE_INSERT_TAIL(bb, e);
-      return APR_SUCCESS;
+      read += len; 
     }
-
-    APR_BUCKET_REMOVE(e);
-    APR_BRIGADE_INSERT_TAIL(bb, e);
-    read += len; 
+    if (APR_BRIGADE_EMPTY(self->bb)) {
+      /* our work is done so remove this filter */
+      ap_remove_input_filter(f);
+    }
   }
-  
-  if (APR_BRIGADE_EMPTY(self->bb)) {
-    /* our work is done so remove this filter */
-    ap_remove_input_filter(f);
-  }
-
   return APR_SUCCESS;
 }
 
@@ -885,7 +936,28 @@ AP_DECLARE(const char *)parp_body_data(request_rec *r, apr_size_t *len) {
     return parp->data;
   }
   return NULL;
-}  
+}
+
+/**
+ * Verifies if some values have been changed and adjust content length header. Also
+ * sets the "use_raw" flag to signalize the input filter to forward the modifed data.
+ */
+static void parp_update_content_length(request_rec *r, parp_t *self, apr_off_t *contentlen) {
+  apr_off_t len = *contentlen;
+  int i;
+  parp_body_entry_t *entries = (parp_body_entry_t *)self->rw_body_params->elts;
+  for(i = 0; i < self->rw_body_params->nelts; ++i) {
+    parp_body_entry_t *b = &entries[i];
+    if(b->new_value) {
+      len = len + strlen(b->new_value) - strlen(b->value);
+      self->use_raw = 1;
+    }
+  }
+  if(apr_table_get(r->headers_in, "Content-Length")) {
+    apr_table_set(r->headers_in, "Content-Length", apr_psprintf(r->pool, "%"APR_OFF_T_FMT, len));
+  }
+  *contentlen = len;
+}
 
 /************************************************************************
  * handlers
@@ -924,13 +996,14 @@ static int parp_header_parser(request_rec * r) {
         apr_off_t contentlen;
         parp_get_params(parp, &tl);
         apr_brigade_length(parp->bb, 1, &contentlen);
-        apr_table_set(r->subprocess_env,
-                      "PARPContentLength",
-                      apr_psprintf(r->pool, "%"APR_OFF_T_FMT, contentlen));
         status = parp_run_hp_hook(r, tl);
         if(parp->rw_body_params) {
           parp_run_modify_body_hook(r, parp->rw_body_params);
+          parp_update_content_length(r, parp, &contentlen);
         }
+        apr_table_set(r->subprocess_env,
+                      "PARPContentLength",
+                      apr_psprintf(r->pool, "%"APR_OFF_T_FMT, contentlen));
       } else {
         parp_srv_config *sconf = ap_get_module_config(r->server->module_config,
                                                       &parp_module);

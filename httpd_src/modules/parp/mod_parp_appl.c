@@ -81,6 +81,30 @@ static apr_status_t parp_appl_test(request_rec *r, apr_table_t *table) {
   return DECLINED;
 }
 
+static apr_status_t parp_appl_modify(request_rec *r, apr_array_header_t *array) {
+  /* run for /htt/modify* only */
+  if(strncmp(r->uri, "/htt/modify", strlen("/htt/modify")) == 0) {
+    int i;
+    parp_body_entry_t *entries = (parp_body_entry_t *)array->elts;
+    for(i = 0; i < array->nelts; ++i) {
+      parp_body_entry_t *b = &entries[i];
+      if(strcmp(b->value, "changeme") == 0) {
+        /* longer */
+        b->new_value = "this_has_changed";
+      }
+      if(strcmp(b->value, "changethat") == 0) {
+        /* shorter */
+        b->new_value = "here";
+      }
+      if(strcmp(b->value, "deletethis") == 0) {
+        /* 0 bytes */
+        b->new_value = "";
+      }
+    }
+  }
+  return DECLINED;
+}
+
 /************************************************************************
  * handlers
  ***********************************************************************/
@@ -207,6 +231,7 @@ static void parp_appl_register_hooks(apr_pool_t * p) {
   ap_hook_post_read_request(parp_appl_post_read_request, NULL, post, APR_HOOK_LAST);
   ap_hook_handler(parp_appl_handler, NULL, NULL, APR_HOOK_LAST);
   APR_OPTIONAL_HOOK(parp, hp_hook, parp_appl_test, NULL, NULL, APR_HOOK_MIDDLE);
+  APR_OPTIONAL_HOOK(parp, modify_body_hook, parp_appl_modify, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
 /************************************************************************
