@@ -298,21 +298,21 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
 	continue;
       }
       /* prepare data finalize string with 0 */
-      if(self->rw_body_params == NULL) {
-        /* don't modify the raw data since we still need them */
-        data[i - match] = 0;
-      }
+      //if(self->rw_body_params == NULL) {
+      /* don't modify the raw data since we still need them */
+      //data[i - match] = 0;
+      //}
 
-      /* got it, store it */
+      /* got it, store it (if>0) */
       if (data[start] && ((i - match) - start)) {
         boundary = apr_pcalloc(self->pool, sizeof(*boundary));
 	boundary->len = (i - match) - start;
-        if(self->rw_body_params) {
-          /* don't modify the raw data since we still need them */
-          boundary->data = apr_pstrndup(self->pool, &data[start], boundary->len);
-        } else {
-          boundary->data = &data[start];
-        }
+        //if(self->rw_body_params) {
+        /* don't modify the raw data since we still need them */
+        //boundary->data = apr_pstrndup(self->pool, &data[start], boundary->len);
+        //} else {
+        boundary->data = &data[start];
+        //}
 	apr_table_addn(tl, tag, (char *) boundary);
       }
       i += incr;
@@ -328,6 +328,37 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
   }
 
   return APR_SUCCESS;
+}
+
+static char *parp_strtok(apr_pool_t *pool, char *str, const char *sep, char **last)
+{
+    char *token;
+
+    if (!str)           /* subsequent call */
+        str = *last;    /* start where we left off */
+
+    /* skip characters in sep (will terminate at '\0') */
+    while (*str && strchr(sep, *str))
+        ++str;
+
+    if (!*str)          /* no more tokens */
+        return NULL;
+
+    token = str;
+
+    /* skip valid token characters to terminate token and
+     * prepare for the next call (will terminate at '\0) 
+     */
+    *last = token + 1;
+    while (**last && !strchr(sep, **last))
+        ++*last;
+
+    if (**last) {
+        **last = '\0';
+        ++*last;
+    }
+
+    return token;
 }
 
 /**
@@ -359,7 +390,7 @@ static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
     }
     apr_table_addn(tl, key, val);
 
-    if (*last == '\n') {
+    if (last && (*last == '\n')) {
       ++last;
     }
     /* look if we have a empty line in front */
@@ -410,7 +441,7 @@ static apr_status_t parp_urlencode(parp_t *self, apr_table_t *headers,
     if (key && (key[0] >= ' ')) {
       /* store it to a table */
       int val_len = strlen(val);
-      if (val_len >= 2 && strcmp(&val[val_len - 2], "\r\n") == 0) {
+      if (val_len >= 2 && strncmp(&val[val_len - 2], "\r\n", 2) == 0) {
         if(self->rw_body_params) {
           val[val_len - 2] = 0;
         }
@@ -461,7 +492,6 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
   parp_parser_f parser;
   parp_block_t *b;
   apr_table_t *hs = apr_table_make(self->pool, 3);
-  
   if (self->recursion > 3) {
     self->error = apr_pstrdup(self->pool, "Too deep recursion of multiparts");
     return APR_EINVAL;
@@ -526,7 +556,7 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
       }
       val_len = b->len;
       /* there must be a \r\n or at least a \n */
-      if (val_len >= 2 && strcmp(&val[val_len - 2], "\r\n") == 0) {
+      if (val_len >= 2 && strncmp(&val[val_len - 2], "\r\n", 2) == 0) {
         if(self->rw_body_params) {
           /* don't modify the raw data since we still need them */
           val = apr_pstrndup(self->pool, val, val_len - 2);
@@ -545,7 +575,7 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
       else {
 	return APR_EINVAL;
       }
-      apr_table_add(self->params, key, val);
+      apr_table_addn(self->params, key, val);
       if(self->rw_body_params) {
         parp_body_entry_t *entry = apr_array_push(self->rw_body_params);
         entry->key = key;
