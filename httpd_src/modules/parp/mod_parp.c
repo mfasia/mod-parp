@@ -71,7 +71,10 @@ typedef struct {
   apr_pool_t *pool;
   request_rec *r;
   apr_bucket_brigade *bb;
+  char *raw_data;                     /** raw data received from the client */
+  apr_size_t raw_data_len;
   apr_table_t *params;
+  apr_array_header_t *rw_body_params; /** table of parp_body_entry_t entries (is null if no body available) */
   apr_table_t *parsers;
   char *error; 
   int flags;
@@ -167,8 +170,9 @@ apr_status_t parp_flatten(apr_bucket_brigade *bb, char **c, apr_size_t *len, apr
  *
  * @return APR_SUCCESS, any apr status code on error
  */
-static apr_status_t parp_get_payload(parp_t *self, char **data, 
-                                     apr_size_t *len) {
+static apr_status_t parp_get_payload(parp_t *self) {
+  char *data;
+  apr_size_t len;
   apr_status_t status;
 
   request_rec *r = self->r;
@@ -178,11 +182,13 @@ static apr_status_t parp_get_payload(parp_t *self, char **data,
     return status;
   }
   
-  if ((status = parp_flatten(self->bb, data, len, r->pool)) 
+  if ((status = parp_flatten(self->bb, &data, &len, r->pool)) 
       != APR_SUCCESS) {
     self->error = apr_pstrdup(r->pool, "Input filter: apr_brigade_pflatten failed");
+  } else {
+    self->raw_data = data;
+    self->raw_data_len = len;
   }
-
   return status;
 }
 
@@ -225,7 +231,12 @@ static apr_status_t parp_read_header(parp_t *self, const char *header,
 	++val;
 	len = strlen(val);
 	if (len > 0) {
-	  val[len - 1] = 0;
+          if(self->rw_body_params) {
+            /* don't modify the raw data since we still need them */
+            val = apr_pstrndup(self->pool, val, len - 1);
+          } else {
+            val[len - 1] = 0;
+          }
 	}
       }
       apr_table_addn(tl, key, val);
@@ -369,19 +380,27 @@ static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
 static apr_status_t parp_urlencode(parp_t *self, apr_table_t *headers,
                                    const char *data, apr_size_t len) {
   char *key;
-  char *val;
+  const char *val;
   char *pair;
-
   const char *rest = data;
   
   while (rest[0]) {
+    const char *here = rest;
     pair = ap_getword(self->pool, &rest, '&');
     /* get key/value */
     val = pair;
-    key = ap_getword_nc(self->pool, &val, '=');
+    key = ap_getword(self->pool, &val, '=');
     if (key && (key[0] >= ' ')) {
       /* store it to a table */
       apr_table_addn(self->params, key, val);
+      /* store rw ref */
+      if(self->rw_body_params) {
+        parp_body_entry_t *entry = apr_array_push(self->rw_body_params);
+        entry->key = key;
+        entry->value = val;
+        entry->new_value = NULL;
+        entry->value_addr = &here[strlen(key)+1];
+      }
     }
   }
   
@@ -472,22 +491,39 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
 
     /* if no content type is set the b->data is the parameters value */
     if (!ct) {
+      char *val = b->data;
       if ((key = apr_table_get(ctds, "name")) == NULL) {
 	return APR_EINVAL;
       }
-      
       val_len = b->len;
       /* there must be a \r\n or at least a \n */
-      if (val_len >= 2 && strcmp(&b->data[val_len - 2], "\r\n") == 0) {
-	b->data[val_len - 2] = 0;
+      if (val_len >= 2 && strcmp(&val[val_len - 2], "\r\n") == 0) {
+        if(self->rw_body_params) {
+          /* don't modify the raw data since we still need them */
+          val = apr_pstrndup(self->pool, val, val_len - 2);
+        } else {
+          val[val_len - 2] = 0;
+        }
       }
-      else if (val_len >= 1 && b->data[val_len - 1] == '\n') {
-	b->data[val_len - 1] = 0;
+      else if (val_len >= 1 && val[val_len - 1] == '\n') {
+        if(self->rw_body_params) {
+          /* don't modify the raw data since we still need them */
+          val = apr_pstrndup(self->pool, val, val_len - 1);
+        } else {
+          val[val_len - 1] = 0;
+        }
       }
       else {
 	return APR_EINVAL;
       }
-      apr_table_add(self->params, key, b->data);
+      apr_table_add(self->params, key, val);
+      if(self->rw_body_params) {
+        parp_body_entry_t *entry = apr_array_push(self->rw_body_params);
+        entry->key = key;
+        entry->value = val;
+        entry->new_value = NULL;
+        entry->value_addr = b->data;
+      }
     }
     
   }
@@ -658,6 +694,7 @@ AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags) {
   self->r = r;
   self->bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
   self->params = apr_table_make(r->pool, 5);
+  self->rw_body_params = NULL;;
   self->parsers = apr_table_make(r->pool, 3);
   apr_table_setn(self->parsers, apr_pstrdup(r->pool, "application/x-www-form-urlencoded"), 
                 (char *)parp_urlencode);
@@ -666,7 +703,10 @@ AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags) {
   apr_table_setn(self->parsers, apr_pstrdup(r->pool, "multipart/mixed"), 
                (char *)parp_multipart);
   self->flags = flags;
-
+  self->raw_data = NULL;
+  self->raw_data_len = 0;
+  self->data = NULL;
+  self->len = 0;
   return self;
 }
 
@@ -682,10 +722,7 @@ AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags) {
  */
 AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
   apr_status_t status;
-  char *data;
-  apr_size_t len;
   parp_parser_f parser;
-
   request_rec *r = self->r;
   
   if (r->args) {
@@ -695,11 +732,13 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
     }
   }
   if(parp_has_body(self)) {
-    if ((status = parp_get_payload(self, &data, &len)) != APR_SUCCESS) {
+    /* TODO: sometimes we don't need rw access which allows some memory optimzaion */
+    self->rw_body_params = apr_array_make(r->pool, 50, sizeof(parp_body_entry_t));
+    if ((status = parp_get_payload(self)) != APR_SUCCESS) {
       return status;
     }
     parser = parp_get_parser(self, apr_table_get(r->headers_in, "Content-Type"));  
-    if ((status = parser(self, r->headers_in, data, len)) != APR_SUCCESS) {
+    if ((status = parser(self, r->headers_in, self->raw_data, self->raw_data_len)) != APR_SUCCESS) {
       /* only set data to self pointer if untouched by parser, 
        * because parser could modify body data */
       if (status == APR_ENOTIMPL) {

@@ -29,6 +29,20 @@
 #define __MOD_PARP_H__
 
 /**************************************************************************
+ * Declations
+ **************************************************************************/
+/**
+ * This is the value of the apr_table_t provided within the modify body hook.
+ */
+typedef struct {
+  const char *key;        /** the key/name of the value read from the request */
+  const char *value;      /** the value of the key/name read from the request */
+  char *new_value;        /** the new value which may be set/modified by a module */
+  const char *value_addr; /** initial value address pointer, for use by the mod_parp internals */
+} parp_body_entry_t;
+
+
+/**************************************************************************
  * Functions
  **************************************************************************/
 AP_DECLARE(apr_status_t )parp_read_payload(request_rec *r, 
@@ -61,6 +75,9 @@ AP_DECLARE(apr_status_t )parp_read_payload(request_rec *r,
 
 APR_DECLARE_EXTERNAL_HOOK(parp, PARP, apr_status_t, hp_hook,
                           (request_rec *r, apr_table_t *table))
+
+APR_DECLARE_EXTERNAL_HOOK(parp, PARP, apr_status_t, modify_body_hook,
+                          (request_rec *r, apr_array_header_t *array))
 
 APR_DECLARE_OPTIONAL_FN(apr_table_t *, parp_hp_table, (request_rec *));
 APR_DECLARE_OPTIONAL_FN(const char *, parp_body_data, (request_rec *, apr_size_t *));
