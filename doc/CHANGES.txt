@@ -1,3 +1,11 @@
+Version 0.9
+  - modify_body_hook provides an array of parp_body_entry_t enties.
+    Each entry contains the parameter key and value as well as a
+    "new_value" field which allows parameter manipulation (you may
+    change the parameter's value by writing a new value string
+    to the "new_value" field).
+    The hook is executed at the header parser, similar to the hp_hook.
+
 Version 0.8
   - Stores the content-length of the processed data within the
     PARPContentLength environment variable (may be used to
