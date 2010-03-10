@@ -1140,7 +1140,7 @@ static const command_rec parp_config_cmds[] = {
  * apache register 
  ***********************************************************************/
 static void parp_register_hooks(apr_pool_t * p) {
-  static const char *pre[] = { "mod_setenvif.c", NULL };
+  static const char *pre[] = { "mod_setenvif.c", "mod_deflate.c", NULL };
   /* header parser is invoked after mod_setenvif */
   ap_hook_header_parser(parp_header_parser, pre, NULL, APR_HOOK_MIDDLE);
   ap_register_input_filter("parp-forward-filter", parp_forward_filter, NULL, AP_FTYPE_RESOURCE);
