@@ -30,7 +30,7 @@
  * Version
  ***********************************************************************/
 static const char revision[] = "$Id$";
-static const char g_revision[] = "0.9";
+static const char g_revision[] = "0.10";
 
 /************************************************************************
  * Includes
@@ -786,6 +786,7 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
   apr_array_header_t *hs = apr_optional_hook_get("modify_body_hook");
   if((hs == NULL) || (hs->nelts == 0)) {
     /* no module has registered */
+    /* TODO: enable/disable modify hook on a per request level */
     modify = 0;
   }
   if (r->args) {
