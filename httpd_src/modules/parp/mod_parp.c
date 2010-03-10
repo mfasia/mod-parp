@@ -823,7 +823,7 @@ static parp_body_entry_t *parp_get_modified(parp_t *self) {
   for(i = 0; i < self->rw_body_params->nelts; ++i) {
     parp_body_entry_t *b = &entries[i];
     if(b->new_value) {
-      if(b->value_addr > self->raw_data) {
+      if(b->value_addr >= self->raw_data) {
         return b;
       }
     }
@@ -852,7 +852,6 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
   apr_bucket *e;
   apr_size_t len;
   const char *buf;
-
   apr_off_t read = 0;
   parp_t *self = f->ctx;
 
@@ -871,16 +870,23 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
     } else {
       element = NULL;
     }
-    rv = apr_brigade_write(bb, NULL, NULL, self->raw_data, bytes); // TODO: apr_brigade_write() makes a copy
+    // TODO: apr_brigade_write() makes a copy of the data (we should create buckets)
+    rv = apr_brigade_write(bb, NULL, NULL, self->raw_data, bytes);
     self->raw_data = self->raw_data + bytes;
     self->raw_data_len -= bytes;
     if(element) {
-      int slen = strlen(element->new_value);
-      int olen = strlen(element->value);
-      /* TODO: handle the case where size exeedes nbytes */
-      rv = apr_brigade_write(bb, NULL, NULL, element->new_value, slen);
-      self->raw_data = self->raw_data + olen;
-      self->raw_data_len -= olen;
+      apr_off_t slen = strlen(element->new_value);
+      apr_off_t olen = strlen(element->value);
+      apr_off_t freelen = nbytes - bytes; /* remaining bytes accepted by the reader */
+      /* send data if:
+         - there is still enough space (requested nbytes)
+         - we did not send any data from the inital raw buffer (already skipped last call)
+         => TODO: handle the case where size "slen" exeedes nbytes */
+      if((freelen >= slen) || bytes) {
+        rv = apr_brigade_write(bb, NULL, NULL, element->new_value, slen);
+        self->raw_data = self->raw_data + olen;
+        self->raw_data_len -= olen;
+      }
     }
     if(self->raw_data_len == 0) {
       /* our work is done so remove this filter */

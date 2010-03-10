@@ -85,7 +85,7 @@ static apr_status_t parp_appl_test(request_rec *r, apr_table_t *table) {
 
 static apr_status_t parp_appl_modify(request_rec *r, apr_array_header_t *array) {
   /* run for /htt/modify* only */
-  if(strncmp(r->uri, "/htt/modify", strlen("/htt/modify")) == 0) {
+  if(strstr(r->uri, "/modify") != NULL) {
     int i;
     parp_body_entry_t *entries = (parp_body_entry_t *)array->elts;
     for(i = 0; i < array->nelts; ++i) {
