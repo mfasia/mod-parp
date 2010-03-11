@@ -73,10 +73,11 @@ typedef struct {
   apr_bucket_brigade *bb;
   char *raw_data;                     /** raw data received from the client */
   apr_size_t raw_data_len;            /** total length of the raw data (excluding modifications) */
-  int use_raw;                        /** indicates the input filter to read the raw data instead of the bb */
+  int use_raw;                        /** indicates the input filter to read the raw data
+                                          instead of the bb */
   apr_table_t *params;                /** readonly parameter table (query+body) */
-  apr_array_header_t *rw_body_params; /** writable table of parp_body_entry_t entries (null if no body available
-                                          of no module has registered) */
+  apr_array_header_t *rw_body_params; /** writable table of parp_body_entry_t entries (null if
+                                          no body available or no module has registered) */
   apr_table_t *parsers;               /** body parser per content type */
   char *error; 
   int flags;
@@ -189,7 +190,7 @@ static apr_status_t parp_get_payload(parp_t *self) {
     return status;
   }
   
-  if ((status = parp_flatten(self->bb, &data, &len, r->pool)) 
+  if ((status = parp_flatten(self->bb, &data, &len, self->pool)) 
       != APR_SUCCESS) {
     self->error = apr_pstrdup(r->pool, "Input filter: apr_brigade_pflatten failed");
   } else {
@@ -816,7 +817,7 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
 
 /**
  * Returns the pointer to the next modified element.
- * TODO: caching (don't iterate through all elements for every call)
+ * TODO: caching (don't iterate through all elements for every call - nice to have)
  */
 static parp_body_entry_t *parp_get_modified(parp_t *self) {
   int i;
@@ -871,9 +872,8 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
     } else {
       element = NULL;
     }
-    // TODO: apr_brigade_write() makes a copy of the data (we should create buckets)
     rv = apr_brigade_write(bb, NULL, NULL, self->raw_data, bytes);
-    self->raw_data = self->raw_data + bytes;
+    self->raw_data = &self->raw_data[bytes];
     self->raw_data_len -= bytes;
     if(element) {
       apr_off_t slen = strlen(element->new_value);
@@ -885,7 +885,7 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
          => TODO: handle the case where size "slen" exeedes nbytes */
       if((freelen >= slen) || bytes) {
         rv = apr_brigade_write(bb, NULL, NULL, element->new_value, slen);
-        self->raw_data = self->raw_data + olen;
+        self->raw_data = &self->raw_data[olen];
         self->raw_data_len -= olen;
       }
     }

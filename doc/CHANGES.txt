@@ -1,4 +1,5 @@
 Version 0.9
+
   - modify_body_hook provides an array of parp_body_entry_t enties.
     Each entry contains the parameter key and value as well as a
     "new_value" field which allows parameter manipulation (you may
@@ -7,19 +8,23 @@ Version 0.9
     The hook is executed at the header parser, similar to the hp_hook.
 
 Version 0.8
+
   - Stores the content-length of the processed data within the
     PARPContentLength environment variable (may be used to
     adjust the content-length header when using mod_deflate).
 
 Version 0.7
+
   - Ignore input filter date on error, else keepalive connection could hang 
-    for ever (actually until timeout)
+    for ever (actually until timeout).
 
 Version 0.6
+
   - Export body data reader.
 
 Version 0.5
-  - Security fix in the get payload function, apache
+
+  - Security fix in the get payload function, Apache
     will reuse data buffer of buckets on the next burst
     of bytes.
 
