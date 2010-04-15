@@ -1,4 +1,7 @@
 - new API (item table) including content type (for form-data)
+- parser for JSON?
+- how to deal with XML?
+- offere functions for char decoding?
 
 ----------------
 
