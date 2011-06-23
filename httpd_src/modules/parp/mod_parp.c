@@ -721,6 +721,16 @@ AP_DECLARE(apr_status_t )parp_read_payload(request_rec *r,
       apr_brigade_cleanup(bb);
     }
     else {
+      /* we expext a bb (even it might be empty)!
+         client may have closed the connection?
+         or any other filter in the chain has canceled the request? */
+      char buf[MAX_STRING_LEN];
+      buf[0] = '\0';
+      if(status > 0) {
+        apr_strerror(status, buf, sizeof(buf));
+      }
+      *error = apr_psprintf(r->pool, "Input filter: Failed reading data from client."
+                            " Blocked by another filter in chain? [%s]", buf);
       seen_eos = 1;
     }
   } while (!seen_eos);

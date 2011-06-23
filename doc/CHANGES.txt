@@ -1,3 +1,9 @@
+Version 0.10
+
+  - Error description if reading from client has failed, e.g. connection
+    has been closed or a filter of another Apache module has canceled
+    the request.
+
 Version 0.9
 
   - modify_body_hook provides an array of parp_body_entry_t enties.
