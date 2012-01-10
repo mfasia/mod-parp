@@ -20,7 +20,7 @@
  *
  * Implementation of the HTTP Test Tool.
  */
-#define HTT_VERSION "0.12.0"
+#define HTT_VERSION "0.12.0a"
 
 /* affects include files on Solaris */
 #define BSD_COMP
@@ -2334,11 +2334,13 @@ static apr_status_t command_REQ(command_t * self, worker_t * worker,
     worker->meth = SSLv23_client_method();
     portname += 4;
   }
+#ifndef OPENSSL_NO_SSL2
   else if (strncmp(portname, "SSL2:", 4) == 0) {
     is_ssl = 1;
     worker->meth = SSLv2_client_method();
     portname += 5;
   }
+#endif
   else if (strncmp(portname, "SSL3:", 4) == 0) {
     is_ssl = 1;
     worker->meth = SSLv3_client_method();
@@ -4442,11 +4444,13 @@ static void *worker_thread_listener(apr_thread_t * thread, void *selfv) {
     self->meth = SSLv23_server_method();
     portname += 4;
   }
+#ifndef OPENSSL_NO_SSL2
   else if (strncmp(portname, "SSL2:", 4) == 0) {
     self->is_ssl = 1;
     self->meth = SSLv2_server_method();
     portname += 5;
   }
+#endif
   else if (strncmp(portname, "SSL3:", 4) == 0) {
     self->is_ssl = 1;
     self->meth = SSLv3_server_method();
