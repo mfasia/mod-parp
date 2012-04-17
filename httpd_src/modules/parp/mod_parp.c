@@ -59,37 +59,81 @@ static const char g_revision[] = "0.10";
 
 #define PARP_FLAGS_NONE 0
 #define PARP_FLAGS_CONT_ON_ERR 1
+#define PARP_FLAGS_FIRST_PARAM_WRITTEN 2
+
+#define PARP_ERR_BRIGADE_FULL (APR_OS_START_USERERR + 1)
 
 /************************************************************************
  * structures
  ***********************************************************************/
- 
+typedef enum {
+  NONE, FORMDATA, MULTIPART
+} body_content_t;
+
+typedef enum {
+  QUERY, BODY
+} parameter_t;
 /**
  * parp hook
  */
-typedef struct {
+typedef struct parp_s{
   apr_pool_t *pool;
   request_rec *r;
   apr_bucket_brigade *bb;
-  char *raw_data;                     /** raw data received from the client */
-  apr_size_t raw_data_len;            /** total length of the raw data (excluding modifications) */
-  int use_raw;                        /** indicates the input filter to read the raw data
-                                          instead of the bb */
-  apr_table_t *params;                /** readonly parameter table (query+body) */
-  apr_array_header_t *rw_body_params; /** writable table of parp_body_entry_t entries (null if
-                                          no body available or no module has registered) */
-  apr_table_t *parsers;               /** body parser per content type */
-  char *error; 
+  char *raw_body_data; /** raw data received from the client */
+  apr_size_t raw_body_data_len; /** total length of the raw data (excluding modifications) */
+  int use_raw_body; /** indicates the input filter to read the raw data instead of the bb  (body content has changed)*/
+  apr_table_t *params; /** readonly parameter table (query+body) */
+  apr_array_header_t *rw_params; /** writable table of parp_entry_t entries (null if
+   no body or query available or no module has registered) */
+  apr_array_header_t *rw_params_query_structure;
+  apr_array_header_t *rw_params_body_structure;
+
+  body_content_t content_typeclass;
+  apr_table_t *parsers; /** body parser per content type */
+
+  char *error;
   int flags;
   int recursion;
-  char *data;
-  apr_size_t len;
+
+  char *data_query;
+  apr_size_t len_query;
+  char *data_body;
+  apr_size_t len_body;
 } parp_t;
+
+typedef struct parp_query_structure_s{
+  int rw_array_index;
+  const char *key;
+  const char *key_addr;
+  const char *value_addr;
+} parp_query_structure_t;
+
+typedef struct parp_body_structure_s{
+  int rw_array_index;
+  const char *key; // name attribute in content-disposition
+  const char *key_addr;
+  const char *value_addr; // pointer to the value in the mulitpart body
+
+  const char *multipart_addr; // pointer to the multipart with the start boundary delimiter
+  int mulitpart_nested_header_len; // header length of nested multipart entries
+  int raw_len; // mulitpart part length incl start boundary.
+  int raw_len_modified; // multipart length
+  const char *multipart_boundary; // boundary with starting --
+  apr_array_header_t *multipart_parameters;
+  int multipart_parameters_ndelete; /* the number of parameters to delete in
+                                       the nested multipart. can be compared to
+                                       multipart_parameters->nelts so see if the
+                                       whole multipart must be deleted.*/
+
+  int written_to_brigade;
+
+} parp_body_structure_t;
 
 /**
  * server configuration
  */
-typedef struct {
+typedef struct parp_srv_config_s{
   int onerror;
   apr_table_t *parsers;
 } parp_srv_config;
@@ -97,9 +141,11 @@ typedef struct {
 /**
  * block
  */
-typedef struct {
+typedef struct parp_block_s{
   apr_size_t len;
   char *data;
+  char *raw_data;
+  apr_size_t raw_data_len;
 } parp_block_t;
 
 /************************************************************************
@@ -108,23 +154,23 @@ typedef struct {
 module AP_MODULE_DECLARE_DATA parp_module;
 
 APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(parp, PARP, apr_status_t, hp_hook,
-                                    (request_rec *r, apr_table_t *table),
-                                    (r, table),
-                                    OK, DECLINED)
+    (request_rec *r, apr_table_t *table),
+    (r, table),
+    OK, DECLINED)
 
 APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(parp, PARP, apr_status_t, modify_body_hook,
-                                    (request_rec *r, apr_array_header_t *array),
-                                    (r, array),
-                                    OK, DECLINED)
+    (request_rec *r, apr_array_header_t *array),
+    (r, array),
+    OK, DECLINED)
 
 /************************************************************************
  * functions
  ***********************************************************************/
 
-typedef apr_status_t (*parp_parser_f)(parp_t *, apr_table_t *, char *, 
-                                      apr_size_t);
+typedef apr_status_t (*parp_parser_f)(parp_t *, parameter_t, apr_table_t *,
+    char *, apr_size_t, apr_array_header_t *);
 
-static parp_parser_f parp_get_parser(parp_t *self, const char *ct); 
+static parp_parser_f parp_get_parser(parp_t *self, const char *ct);
 
 /**
  * Verifies if we may expext any body request data.
@@ -133,16 +179,16 @@ static int parp_has_body(parp_t *self) {
   request_rec *r = self->r;
   const char *tenc = apr_table_get(r->headers_in, "Transfer-Encoding");
   const char *lenp = apr_table_get(r->headers_in, "Content-Length");
-  if(tenc) {
-    if(strcasecmp(tenc, "chunked") == 0) {
+  if (tenc) {
+    if (strcasecmp(tenc, "chunked") == 0) {
       return 1;
     }
   }
-  if(lenp) {
+  if (lenp) {
     char *endstr;
     apr_off_t remaining;
-    if((apr_strtoff(&remaining, lenp, &endstr, 10) == APR_SUCCESS) &&
-       (remaining > 0)) {
+    if ((apr_strtoff(&remaining, lenp, &endstr, 10) == APR_SUCCESS)
+        && (remaining > 0)) {
       return 1;
     }
   }
@@ -152,13 +198,14 @@ static int parp_has_body(parp_t *self) {
 /**
  * apr_brigade_pflatten() to null terminated string
  */
-apr_status_t parp_flatten(apr_bucket_brigade *bb, char **c, apr_size_t *len, apr_pool_t *pool) {
+apr_status_t parp_flatten(apr_bucket_brigade *bb, char **c, apr_size_t *len,
+    apr_pool_t *pool) {
   apr_off_t actual;
   apr_size_t total;
   apr_status_t rv;
 
   apr_brigade_length(bb, 1, &actual);
-  total = (apr_size_t)actual;
+  total = (apr_size_t) actual;
   *c = apr_palloc(pool, total + 1);
   rv = apr_brigade_flatten(bb, *c, &total);
   *len = total;
@@ -184,18 +231,18 @@ static apr_status_t parp_get_payload(parp_t *self) {
   apr_status_t status;
 
   request_rec *r = self->r;
-  
-  if ((status = parp_read_payload(r, self->bb, &self->error)) 
-      != APR_SUCCESS) {
+
+  if ((status = parp_read_payload(r, self->bb, &self->error)) != APR_SUCCESS) {
     return status;
   }
-  
-  if ((status = parp_flatten(self->bb, &data, &len, self->pool)) 
-      != APR_SUCCESS) {
-    self->error = apr_pstrdup(r->pool, "Input filter: apr_brigade_pflatten failed");
-  } else {
-    self->raw_data = data;
-    self->raw_data_len = len;
+
+  if ((status = parp_flatten(self->bb, &data, &len, self->pool)) != APR_SUCCESS) {
+    self->error = apr_pstrdup(r->pool,
+        "Input filter: apr_brigade_pflatten failed");
+  }
+  else {
+    self->raw_body_data = data;
+    self->raw_body_data_len = len;
   }
   return status;
 }
@@ -209,8 +256,8 @@ static apr_status_t parp_get_payload(parp_t *self) {
  *
  * @return APR_SUCCESS or APR_EINVAL
  */
-static apr_status_t parp_read_header(parp_t *self, const char *header, 
-                                     apr_table_t **result) {
+static apr_status_t parp_read_header(parp_t *self, const char *header,
+    apr_table_t **result) {
   char *pair;
   char *key;
   char *val;
@@ -218,7 +265,7 @@ static apr_status_t parp_read_header(parp_t *self, const char *header,
   apr_size_t len;
 
   apr_table_t *tl = apr_table_make(self->pool, 3);
-  
+
   *result = tl;
 
   /* iterate over multipart key/value pairs */
@@ -236,21 +283,23 @@ static apr_status_t parp_read_header(parp_t *self, const char *header,
     if (key) {
       /* strip " away */
       if (val && val[0] == '"') {
-	++val;
-	len = strlen(val);
-	if (len > 0) {
-          if(self->rw_body_params) {
+        ++val;
+        len = strlen(val);
+        if (len > 0) {
+          if (self->rw_params) {
             /* don't modify the raw data since we still need them */
             val = apr_pstrndup(self->pool, val, len - 1);
-          } else {
+          }
+          else {
             val[len - 1] = 0;
           }
-	}
+        }
       }
       apr_table_addn(tl, key, val);
     }
-  } while ((pair = apr_strtok(NULL, ";,", &last)));
-  
+  }
+  while ((pair = apr_strtok(NULL, ";,", &last)));
+
   return APR_SUCCESS;
 }
 
@@ -265,38 +314,41 @@ static apr_status_t parp_read_header(parp_t *self, const char *header,
  *
  * @return APR_SUCCESS or APR_EINVAL
  */
-static apr_status_t parp_read_boundaries(parp_t *self, char *data, 
-                                         apr_size_t len, const char *tag,
-					 apr_table_t **result) {
+static apr_status_t parp_read_boundaries(parp_t *self, char *data,
+    apr_size_t len, const char *tag, apr_table_t **result) {
+
   apr_size_t i;
   apr_size_t start;
   apr_size_t match;
   apr_size_t tag_len;
+  apr_size_t boundary_start;
+  apr_size_t preamble;
   int incr;
   apr_table_t *tl;
   parp_block_t *boundary;
-  
+
   tl = apr_table_make(self->pool, 5);
   *result = tl;
   tag_len = strlen(tag);
-  for (i = 0, match = 0, start = 0; i < len; i++) {
+  for (i = 0, match = 0, start = 0, boundary_start = 0, preamble = 1; i < len; i++) {
     /* test if match complete */
     if (match == tag_len) {
+      preamble = 0;
       if (strncmp(&data[i], "\r\n", 2) == 0) {
-	incr = 2;
+        incr = 2;
       }
       else if (strncmp(&data[i], "--\r\n", 4) == 0) {
-	incr = 4;
+        incr = 4;
       }
       else if (strcmp(&data[i], "--") == 0) {
-	incr = 2;
+        incr = 2;
       }
       else if (data[i] == '\n') {
-	incr = 1;
+        incr = 1;
       }
       else {
-	match = 0;
-	continue;
+        match = 0;
+        continue;
       }
       /* prepare data finalize string with 0 */
       //if(self->rw_body_params == NULL) {
@@ -307,16 +359,27 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
       /* got it, store it (if>0) */
       if (data[start] && ((i - match) - start)) {
         boundary = apr_pcalloc(self->pool, sizeof(*boundary));
-	boundary->len = (i - match) - start;
+        boundary->len = (i - match) - start;
         //if(self->rw_body_params) {
         /* don't modify the raw data since we still need them */
         //boundary->data = apr_pstrndup(self->pool, &data[start], boundary->len);
         //} else {
         boundary->data = &data[start];
+        boundary->raw_data = &data[boundary_start];
+        boundary->raw_data_len = (i - match) - boundary_start;
         //}
-	apr_table_addn(tl, tag, (char *) boundary);
+        apr_table_addn(tl, tag, (char *) boundary);
+        //        char* data_cut = apr_pstrmemdup(self->pool, boundary->data, boundary->len);
+        //        printf("***\n%s\n***\n", data_cut);
+        //        char* multipart = apr_pstrmemdup(self->pool, boundary->raw_data, boundary->raw_data_len);
+        //        printf("+++\n%s\n+++\n", multipart);
+
+        boundary_start = (i - match);
       }
       i += incr;
+      if (boundary_start <= start) {
+        boundary_start = start;
+      }
       start = i;
     }
     /* pattern matching */
@@ -325,39 +388,43 @@ static apr_status_t parp_read_boundaries(parp_t *self, char *data,
     }
     else {
       match = 0;
+      if (preamble == 1) {
+        start = boundary_start = i+1;
+      }
     }
   }
 
   return APR_SUCCESS;
 }
 
-static char *parp_strtok(apr_pool_t *pool, char *str, const char *sep, char **last) {
-    char *token;
+static char *parp_strtok(apr_pool_t *pool, char *str, const char *sep,
+    char **last) {
+  char *token;
 
-    if (!str)           /* subsequent call */
-        str = *last;    /* start where we left off */
+  if (!str) /* subsequent call */
+    str = *last; /* start where we left off */
 
-    /* skip characters in sep (will terminate at '\0') */
-    while (*str && strchr(sep, *str))
-        ++str;
+  /* skip characters in sep (will terminate at '\0') */
+  while (*str && strchr(sep, *str))
+    ++str;
 
-    if (!*str)          /* no more tokens */
-        return NULL;
+  if (!*str) /* no more tokens */
+    return NULL;
 
-    token = str;
+  token = str;
 
-    /* skip valid token characters to terminate token and
-     * prepare for the next call (will terminate at '\0) 
-     */
-    *last = token + 1;
-    while (**last && !strchr(sep, **last))
-        ++*last;
-    token = apr_pstrndup(pool, token, *last - token);
-    if (**last) {
-        ++*last;
-    }
+  /* skip valid token characters to terminate token and
+   * prepare for the next call (will terminate at '\0)
+   */
+  *last = token + 1;
+  while (**last && !strchr(sep, **last))
+    ++*last;
+  token = apr_pstrndup(pool, token, *last - token);
+  if (**last) {
+    ++*last;
+  }
 
-    return token;
+  return token;
 }
 
 /**
@@ -372,7 +439,7 @@ static char *parp_strtok(apr_pool_t *pool, char *str, const char *sep, char **la
  * @return APR_SUCCESS or APR_EINVAL
  */
 static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
-                                     apr_table_t **headers) {
+    apr_table_t **headers) {
   char *last = NULL;
   char *header = NULL;
   char *key = NULL;
@@ -385,14 +452,15 @@ static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
   while (header) {
     key = apr_strtok(header, ":", &val);
     if (val) {
-      while (*val == ' ') ++val;
+      while (*val == ' ')
+        ++val;
     }
     apr_table_addn(tl, key, val);
 
     if (last && (*last == '\n')) {
       ++last;
     }
-    /* look if we have a empty line in front */
+    /* look if we have a empty line in front (header/body separator)*/
     if (strncmp(last, "\r\n", 2) == 0) {
       ++last;
       break;
@@ -403,12 +471,12 @@ static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
     ++last;
     b->len -= last - data;
     b->data = last;
-  } else {
+  }
+  else {
     b->len = 0;
     b->data = NULL;
   }
-  
-  
+
   return APR_SUCCESS;
 }
 
@@ -424,13 +492,17 @@ static apr_status_t parp_get_headers(parp_t *self, parp_block_t *b,
  *
  * @note: Get parp_get_error for more detailed report
  */
-static apr_status_t parp_urlencode(parp_t *self, apr_table_t *headers,
-                                   const char *data, apr_size_t len) {
+static apr_status_t parp_parser_urlencode(parp_t *self,
+    parameter_t parameter_type, apr_table_t *headers, const char *data,
+    apr_size_t len, apr_array_header_t *structure_array) {
   char *key;
   char *val;
   char *pair;
   const char *rest = data;
-  
+
+  if (parameter_type == BODY && self->content_typeclass == NONE) {
+    self->content_typeclass = FORMDATA;
+  }
   while (rest[0]) {
     const char *here = rest;
     pair = ap_getword(self->pool, &rest, '&');
@@ -441,25 +513,50 @@ static apr_status_t parp_urlencode(parp_t *self, apr_table_t *headers,
       /* store it to a table */
       int val_len = strlen(val);
       if (val_len >= 2 && strncmp(&val[val_len - 2], "\r\n", 2) == 0) {
-        if(self->rw_body_params) {
+        if (self->rw_params) { // TODO why???
           val[val_len - 2] = 0;
         }
       }
       else if (val_len >= 1 && val[val_len - 1] == '\n') {
         val[val_len - 1] = 0;
       }
+
       apr_table_addn(self->params, key, val);
+
       /* store rw ref */
-      if(self->rw_body_params) {
-        parp_body_entry_t *entry = apr_array_push(self->rw_body_params);
+      if (self->rw_params) {
+        parp_entry_t *entry = apr_array_push(self->rw_params);
         entry->key = key;
         entry->value = val;
         entry->new_value = NULL;
-        entry->value_addr = &here[strlen(key)+1];
+        entry->delete = 0;
+
+        if (structure_array) {
+          if (parameter_type == QUERY) {
+            parp_query_structure_t *structure = apr_array_push(structure_array);
+            structure->key = key;
+            structure->key_addr = &here[0];
+            structure->value_addr = &here[strlen(key) + 1];
+            structure->rw_array_index = self->rw_params->nelts - 1;
+          }
+          else {
+            parp_body_structure_t *structure = apr_array_push(structure_array);
+            structure->key = key;
+            structure->key_addr = &here[0];
+            structure->value_addr = &here[strlen(key) + 1];
+            structure->rw_array_index = self->rw_params->nelts - 1;
+            structure->multipart_parameters = NULL;
+            structure->multipart_addr = NULL;
+            structure->raw_len = strlen(key) + 1 + strlen(val);
+            structure->raw_len_modified = structure->raw_len;
+            structure->multipart_parameters_ndelete = 0;
+            structure->written_to_brigade = 0;
+          }
+        }
       }
     }
   }
-  
+
   return APR_SUCCESS;
 }
 
@@ -475,8 +572,9 @@ static apr_status_t parp_urlencode(parp_t *self, apr_table_t *headers,
  *
  * @note: Get parp_get_error for more detailed report
  */
-static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers, 
-                                   char *data, apr_size_t len) {
+static apr_status_t parp_parser_multipart(parp_t *self,
+    parameter_t parameter_type, apr_table_t *headers, char *data,
+    apr_size_t len, apr_array_header_t* structure_array) {
   apr_status_t status;
   apr_size_t val_len;
   const char *boundary;
@@ -495,9 +593,12 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
     self->error = apr_pstrdup(self->pool, "Too deep recursion of multiparts");
     return APR_EINVAL;
   }
+  if (self->content_typeclass == NONE) {
+    self->content_typeclass = MULTIPART;
+  }
 
   ++self->recursion;
-  
+
   ct = apr_table_get(headers, "Content-Type");
   if (ct == NULL) {
     self->error = apr_pstrdup(self->pool, "No content type available");
@@ -511,35 +612,134 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
   if (!(boundary = apr_table_get(ctt, "boundary"))) {
     return APR_EINVAL;
   }
-  
+
   /* prefix boundary wiht a -- */
   boundary = apr_pstrcat(self->pool, "--", boundary, NULL);
 
-  if ((status = parp_read_boundaries(self, data, len, boundary, &bs)) != APR_SUCCESS) {
+  parp_body_structure_t* body_structure = NULL;
+  parp_body_structure_t* body_block_structure = NULL;
+  if (structure_array != NULL && self->recursion == 1) {
+    body_structure = apr_array_push(structure_array);
+    body_structure->rw_array_index = -1;
+    body_structure->multipart_addr = data;
+    body_structure->mulitpart_nested_header_len = 0;
+    body_structure->raw_len = len;
+    body_structure->raw_len_modified = len;
+    body_structure->multipart_parameters = apr_array_make(self->pool, 50,
+        sizeof(parp_body_structure_t));
+    body_structure->multipart_parameters_ndelete = 0;
+    body_structure->multipart_boundary = apr_pstrndup(self->pool, boundary,
+        strlen(boundary));
+    body_structure->written_to_brigade = 0;
+  }
+
+  if ((status = parp_read_boundaries(self, data, len, boundary, &bs))
+      != APR_SUCCESS) {
     self->error = apr_pstrdup(self->pool, "failed to read boundaries");
     return status;
   }
-  
-  /* iterate over boundaries and store their param/value pairs */ 
+
+  // get boundaries elements
   e = (apr_table_entry_t *) apr_table_elts(bs)->elts;
+
+  // remove pre- and postamble from the multipart structure if exists...
+  if (body_structure != NULL && apr_table_elts(bs)->nelts > 0) {
+    // first boundary
+    b = (parp_block_t *) e[0].val;
+    body_structure->multipart_addr = b->raw_data;
+    //last boundary
+    b = (parp_block_t *) e[apr_table_elts(bs)->nelts - 1].val;
+    char *multipart_end = b->raw_data;
+    multipart_end += b->raw_data_len;
+    int data_len_remaining = len - (multipart_end - data);
+    int match;
+    int boundary_len = strlen(boundary);
+    for (i = 0, match = 0; i < data_len_remaining; ++i) {
+
+      if (match == boundary_len) {
+        if (strncmp(&multipart_end[i], "--\r\n", 4) == 0) {
+          i += 4;
+        }
+        else if (strcmp(&multipart_end[i], "--") == 0) {
+          i += 2;
+        }
+        else {
+          // should not happen as it need to be the last boundary
+          break;
+        }
+        multipart_end += i;
+        body_structure->raw_len = multipart_end - body_structure->multipart_addr;
+        body_structure->raw_len_modified = body_structure->raw_len;
+        break;
+      }
+      /* pattern matching */
+      if (match < boundary_len && multipart_end[i] == boundary[match]) {
+        ++match;
+      }
+      else {
+        match = 0;
+      }
+    }
+  }
+
+
+  /* iterate over boundaries and store their param/value pairs */
   for (i = 0; i < apr_table_elts(bs)->nelts; ++i) {
     /* read boundary headers */
-    b = (parp_block_t *)e[i].val;
-    if ((status = parp_get_headers(self, b, &hs))) {
-      self->error = apr_pstrdup(self->pool, "failed to read headers within boundary");
+    b = (parp_block_t *) e[i].val;
+
+    if (body_structure != NULL) {
+      body_block_structure = apr_array_push(
+          body_structure->multipart_parameters);
+      body_block_structure->multipart_addr = b->raw_data;
+      body_block_structure->raw_len = b->raw_data_len;
+      body_block_structure->raw_len_modified = b->raw_data_len;
+      body_block_structure->written_to_brigade = 0;
+    } else if (structure_array != NULL) {
+      body_block_structure = apr_array_push(
+          structure_array);
+      body_block_structure->multipart_addr = b->raw_data;
+      body_block_structure->raw_len = b->raw_data_len;
+      body_block_structure->raw_len_modified = b->raw_data_len;
+      body_block_structure->written_to_brigade = 0;
+    }
+
+    if ((status = parp_get_headers(self, b, &hs)) != APR_SUCCESS) {
+      self->error = apr_pstrdup(self->pool,
+          "failed to read headers within boundary");
       return status;
     }
 
-    if ((ct = apr_table_get(hs, "Content-Type"))) {
+    if ((ct = apr_table_get(hs, "Content-Type")) && apr_strnatcasecmp(ct,
+        "text/plain") != 0) {
       parser = parp_get_parser(self, ct);
-      if ((status = parser(self, hs, b->data, b->len)) != APR_SUCCESS && 
-	  status != APR_ENOTIMPL) {
-	return status;
+
+      if (parser == parp_parser_multipart) {
+        if (body_block_structure != NULL) {
+          int nested_mulitpart_header_len = b->data - b->raw_data;
+          body_block_structure->mulitpart_nested_header_len =
+              (nested_mulitpart_header_len > 0 ? nested_mulitpart_header_len : 0);
+          body_block_structure->multipart_parameters = apr_array_make(self->pool,
+              50, sizeof(parp_body_structure_t));
+          body_block_structure->rw_array_index = -1;
+          body_block_structure->multipart_parameters_ndelete = 0;
+          status = parser(self, parameter_type, hs, b->data, b->len,
+              body_block_structure->multipart_parameters);
+        } else {
+          status = parser(self, parameter_type, hs, b->data, b->len, NULL);
+        }
+      }
+      else {
+        status = parser(self, parameter_type, hs, b->data, b->len, NULL);
+      }
+      if (status != APR_SUCCESS && status != APR_ENOTIMPL) {
+        return status;
       }
     }
-    
+
     if (!(ctd = apr_table_get(hs, "Content-Disposition"))) {
-      self->error = apr_pstrdup(self->pool, "failed to read content disposition");
+      self->error = apr_pstrdup(self->pool,
+          "failed to read content disposition");
       return APR_EINVAL;
     }
 
@@ -547,46 +747,58 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
       return status;
     }
 
-    /* if no content type is set the b->data is the parameters value */
-    if (!ct) {
+    /* if no content type is set the b->data is the parameters value
+     * no content type implies text/plain - this is the only type we can edit */
+    if (!ct || ((apr_strnatcasecmp(ct, "text/plain") == 0) && ctd)) {
       char *val = b->data;
       if ((key = apr_table_get(ctds, "name")) == NULL) {
-	return APR_EINVAL;
+        return APR_EINVAL;
       }
       val_len = b->len;
       /* there must be a \r\n or at least a \n */
       if (val_len >= 2 && strncmp(&val[val_len - 2], "\r\n", 2) == 0) {
-        if(self->rw_body_params) {
+        if (self->rw_params) {
           /* don't modify the raw data since we still need them */
           val = apr_pstrndup(self->pool, val, val_len - 2);
-        } else {
+        }
+        else {
           val[val_len - 2] = 0;
         }
       }
       else if (val_len >= 1 && val[val_len - 1] == '\n') {
-        if(self->rw_body_params) {
+        if (self->rw_params) {
           /* don't modify the raw data since we still need them */
           val = apr_pstrndup(self->pool, val, val_len - 1);
-        } else {
+        }
+        else {
           val[val_len - 1] = 0;
         }
       }
       else {
-	return APR_EINVAL;
+        return APR_EINVAL;
       }
+
       apr_table_addn(self->params, key, val);
-      if(self->rw_body_params) {
-        parp_body_entry_t *entry = apr_array_push(self->rw_body_params);
+
+      if (self->rw_params) {
+        parp_entry_t *entry = apr_array_push(self->rw_params);
         entry->key = key;
         entry->value = val;
         entry->new_value = NULL;
-        entry->value_addr = b->data;
+        entry->delete = 0;
+
+        if (body_block_structure != NULL) {
+          body_block_structure->key = key;
+          body_block_structure->key_addr = b->raw_data;
+          body_block_structure->value_addr = b->data;
+          body_block_structure->rw_array_index = self->rw_params->nelts - 1;
+          body_block_structure->written_to_brigade = 0;
+        }
       }
     }
-    
   }
-    
   /* now do all boundaries */
+  --self->recursion;
   return APR_SUCCESS;
 }
 
@@ -600,8 +812,9 @@ static apr_status_t parp_multipart(parp_t *self, apr_table_t *headers,
  *
  * @return APR_ENOTIMPL
  */
-static apr_status_t parp_not_impl(parp_t *self, apr_table_t *headers, 
-                                  char *data, apr_size_t len) {
+static apr_status_t parp_parser_not_impl(parp_t *self,
+    parameter_t parameter_type, apr_table_t *headers, char *data,
+    apr_size_t len, apr_array_header_t* structure_array) {
   return APR_ENOTIMPL;
 }
 
@@ -615,10 +828,11 @@ static apr_status_t parp_not_impl(parp_t *self, apr_table_t *headers,
  *
  * @return APR_SUCCESS
  */
-static apr_status_t parp_get_body(parp_t *self, apr_table_t *headers, 
-                                  char *data, apr_size_t len) {
-  self->data = data;
-  self->len = len;
+static apr_status_t parp_parser_get_body(parp_t *self,
+    parameter_t parameter_type, apr_table_t *headers, char *data,
+    apr_size_t len, apr_array_header_t* structure_array) {
+  self->data_body = data;
+  self->len_body = len;
   return APR_SUCCESS;
 }
 
@@ -635,17 +849,18 @@ static parp_parser_f parp_get_parser(parp_t *self, const char *ct) {
   char *last;
 
   parp_parser_f parser = NULL;
-  
+
   if (ct) {
     type = apr_strtok(apr_pstrdup(self->pool, ct), ";,", &last);
     if (type) {
-      parp_srv_config *sconf = ap_get_module_config(self->r->server->module_config,
-                                                    &parp_module);
+      parp_srv_config *sconf =
+          ap_get_module_config(self->r->server->module_config,
+              &parp_module);
       if (sconf->parsers) {
-	parser = (parp_parser_f)apr_table_get(sconf->parsers, type);
+        parser = (parp_parser_f) apr_table_get(sconf->parsers, type);
       }
       if (!parser) {
-	parser = (parp_parser_f)apr_table_get(self->parsers, type);
+        parser = (parp_parser_f) apr_table_get(self->parsers, type);
       }
     }
   }
@@ -653,9 +868,11 @@ static parp_parser_f parp_get_parser(parp_t *self, const char *ct) {
     return parser;
   }
   else {
-    self->error = apr_psprintf(self->pool, "No parser available for this content type (%s)",
-                               ct == NULL ? "-" : ct);
-    return parp_not_impl;
+    self->error
+        = apr_psprintf(self->pool,
+            "No parser available for this content type (%s)", ct == NULL ? "-"
+                : ct);
+    return parp_parser_not_impl;
   }
 }
 
@@ -672,9 +889,8 @@ static parp_parser_f parp_get_parser(parp_t *self, const char *ct) {
  *
  * @return APR_SUCCESS, any apr status code on error
  */
-AP_DECLARE(apr_status_t )parp_read_payload(request_rec *r, 
-                                           apr_bucket_brigade *out, 
-			      	           char **error) {
+AP_DECLARE(apr_status_t ) parp_read_payload(request_rec *r,
+    apr_bucket_brigade *out, char **error) {
   apr_status_t status;
   apr_bucket_brigade *bb;
   apr_bucket *b;
@@ -694,49 +910,52 @@ AP_DECLARE(apr_status_t )parp_read_payload(request_rec *r,
   bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
 
   do {
-    status = ap_get_brigade(r->input_filters, bb, AP_MODE_READBYTES, APR_BLOCK_READ, HUGE_STRING_LEN);
- 
+    status = ap_get_brigade(r->input_filters, bb, AP_MODE_READBYTES,
+        APR_BLOCK_READ, HUGE_STRING_LEN);
+
     if (status == APR_SUCCESS) {
       while (!APR_BRIGADE_EMPTY(bb)) {
         b = APR_BRIGADE_FIRST(bb);
-	APR_BUCKET_REMOVE(b);
+        APR_BUCKET_REMOVE(b);
 
-	if (APR_BUCKET_IS_EOS(b)) {
-	  seen_eos = 1;
-	  APR_BRIGADE_INSERT_TAIL(out, b);
-	}
-	else if (APR_BUCKET_IS_FLUSH(b)) {
-	  APR_BRIGADE_INSERT_TAIL(out, b);
-	}
-	else {
-	  status = apr_bucket_read(b, &buf, &len, APR_BLOCK_READ);
-	  if (status != APR_SUCCESS) {   
-	    *error = apr_pstrdup(r->pool, "Input filter: Failed reading input");
-	    return status;
-	  }
-	  apr_brigade_write(out, NULL, NULL, buf, len);
-	  apr_bucket_destroy(b);
-	}
+        if (APR_BUCKET_IS_EOS(b)) {
+          seen_eos = 1;
+          APR_BRIGADE_INSERT_TAIL(out, b);
+        }
+        else if (APR_BUCKET_IS_FLUSH(b)) {
+          APR_BRIGADE_INSERT_TAIL(out, b);
+        }
+        else {
+          status = apr_bucket_read(b, &buf, &len, APR_BLOCK_READ);
+          if (status != APR_SUCCESS) {
+            *error = apr_pstrdup(r->pool, "Input filter: Failed reading input");
+            return status;
+          }
+          apr_brigade_write(out, NULL, NULL, buf, len);
+          apr_bucket_destroy(b);
+        }
       }
       apr_brigade_cleanup(bb);
     }
     else {
       /* we expext a bb (even it might be empty)!
-         client may have closed the connection?
-         or any other filter in the chain has canceled the request? */
+       client may have closed the connection?
+       or any other filter in the chain has canceled the request? */
       char buf[MAX_STRING_LEN];
       buf[0] = '\0';
-      if(status > 0) {
+      if (status > 0) {
         apr_strerror(status, buf, sizeof(buf));
       }
-      *error = apr_psprintf(r->pool, "Input filter: Failed reading data from client."
-                            " Blocked by another filter in chain? [%s]", buf);
+      *error = apr_psprintf(r->pool,
+          "Input filter: Failed reading data from client."
+            " Blocked by another filter in chain? [%s]", buf);
       seen_eos = 1;
     }
-  } while (!seen_eos);
+  }
+  while (!seen_eos);
 
   apr_brigade_length(out, 1, &off);
-   
+
   /* correct content-length header if deflate filter runs before */
   enc = apr_table_get(r->headers_in, "Transfer-Encoding");
   if (!enc || strcasecmp(enc, "chunked") != 0) {
@@ -762,20 +981,29 @@ AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags) {
   self->r = r;
   self->bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
   self->params = apr_table_make(r->pool, 5);
-  self->rw_body_params = NULL;;
+  self->rw_params = NULL;
+  self->rw_params_query_structure = NULL;
+  self->rw_params_body_structure = NULL;
   self->parsers = apr_table_make(r->pool, 3);
-  apr_table_setn(self->parsers, apr_pstrdup(r->pool, "application/x-www-form-urlencoded"), 
-                (char *)parp_urlencode);
-  apr_table_setn(self->parsers, apr_pstrdup(r->pool, "multipart/form-data"), 
-               (char *)parp_multipart);
-  apr_table_setn(self->parsers, apr_pstrdup(r->pool, "multipart/mixed"), 
-               (char *)parp_multipart);
+  apr_table_setn(self->parsers, apr_pstrdup(r->pool,
+      "application/x-www-form-urlencoded"), (char *) parp_parser_urlencode);
+  apr_table_setn(self->parsers, apr_pstrdup(r->pool, "multipart/form-data"),
+      (char *) parp_parser_multipart);
+  apr_table_setn(self->parsers, apr_pstrdup(r->pool, "multipart/mixed"),
+      (char *) parp_parser_multipart);
   self->flags = flags;
-  self->raw_data = NULL;
-  self->raw_data_len = 0;
-  self->use_raw = 0;
-  self->data = NULL;
-  self->len = 0;
+
+  self->raw_body_data = NULL;
+  self->raw_body_data_len = 0;
+  self->use_raw_body = 0;
+
+  self->content_typeclass = NONE;
+
+  self->data_body = NULL;
+  self->len_body = 0;
+
+  self->recursion = 0;
+
   return self;
 }
 
@@ -793,28 +1021,38 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
   apr_status_t status;
   parp_parser_f parser;
   request_rec *r = self->r;
-  int modify = 1;
+  int modify = 0;
   apr_array_header_t *hs = apr_optional_hook_get("modify_body_hook");
-  if((hs == NULL) || (hs->nelts == 0)) {
-    /* no module has registered */
-    /* TODO: enable/disable modify hook on a per request level */
-    modify = 0;
+  if ((hs != NULL) && (hs->nelts > 0)) {
+    /* module has registered */
+    self->rw_params = apr_array_make(r->pool, 50, sizeof(parp_entry_t));
+    modify = 1;
   }
-  if (r->args) {
-    if ((status = parp_urlencode(self, r->headers_in, r->args, strlen(r->args))) 
+  if (r->args) { // read query parameters
+    if (modify == 1) {
+      self->rw_params_query_structure = apr_array_make(r->pool, 50,
+          sizeof(parp_query_structure_t));
+    }
+    if ((status = parp_parser_urlencode(self, QUERY, r->headers_in, r->args,
+        strlen(r->args), self->rw_params_query_structure)) // TODO what happens with the changed query parameters
         != APR_SUCCESS) {
       return status;
     }
+
   }
-  if(parp_has_body(self)) {
-    if(modify) {
-      self->rw_body_params = apr_array_make(r->pool, 50, sizeof(parp_body_entry_t));
+  if (parp_has_body(self)) {
+    if (modify == 1) {
+      self->rw_params_body_structure = apr_array_make(r->pool, 50,
+          sizeof(parp_body_structure_t));
     }
     if ((status = parp_get_payload(self)) != APR_SUCCESS) {
       return status;
     }
-    parser = parp_get_parser(self, apr_table_get(r->headers_in, "Content-Type"));  
-    if ((status = parser(self, r->headers_in, self->raw_data, self->raw_data_len)) != APR_SUCCESS) {
+    parser
+        = parp_get_parser(self, apr_table_get(r->headers_in, "Content-Type"));
+    if ((status = parser(self, BODY, r->headers_in, self->raw_body_data,
+        self->raw_body_data_len, self->rw_params_body_structure))
+        != APR_SUCCESS) {
       /* only set data to self pointer if untouched by parser, 
        * because parser could modify body data */
       if (status == APR_ENOTIMPL) {
@@ -825,23 +1063,99 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
   return APR_SUCCESS;
 }
 
-/**
- * Returns the pointer to the next modified element.
- * TODO: caching (don't iterate through all elements for every call - nice to have)
- */
-static parp_body_entry_t *parp_get_modified(parp_t *self) {
+
+AP_DECLARE (apr_status_t) parp_write_nested_multipart(parp_t *self,
+    apr_bucket_brigade * bb, apr_off_t* freebytes, parp_body_structure_t *multipart) {
+
   int i;
-  parp_body_entry_t *entries = (parp_body_entry_t *)self->rw_body_params->elts;
-  for(i = 0; i < self->rw_body_params->nelts; ++i) {
-    parp_body_entry_t *b = &entries[i];
-    if(b->new_value) {
-      if(b->value_addr >= self->raw_data) {
-        return b;
+  apr_status_t rv;
+  parp_entry_t *rw_entries = (parp_entry_t *) self->rw_params->elts;
+
+
+  if (multipart->multipart_parameters && multipart->multipart_parameters->nelts == multipart->multipart_parameters_ndelete) { // all multipart elements are deleted
+    self->raw_body_data = &self->raw_body_data[multipart->raw_len];
+    self->raw_body_data_len -= multipart->raw_len;
+    multipart->written_to_brigade = 1;
+  } else {
+
+    // writing nested mulitpart header
+    if (*freebytes >= multipart->mulitpart_nested_header_len) {
+      if ((rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, multipart->mulitpart_nested_header_len)) != APR_SUCCESS) { return rv;}
+      self->raw_body_data_len -= multipart->mulitpart_nested_header_len;
+      self->raw_body_data = &self->raw_body_data[multipart->mulitpart_nested_header_len];
+      *freebytes -= multipart->mulitpart_nested_header_len;
+    } else {
+      return PARP_ERR_BRIGADE_FULL;
+    }
+
+    // writing elements
+    parp_body_structure_t *multipart_param_entries =
+                      (parp_body_structure_t *) multipart->multipart_parameters->elts;
+    for (i = 0; i < multipart->multipart_parameters->nelts; ++i) {
+      parp_body_structure_t *mp = &multipart_param_entries[i];
+      if (mp->rw_array_index >= 0 && mp->rw_array_index < self->rw_params->nelts && mp->written_to_brigade == 0) {
+        parp_entry_t *e = &rw_entries[mp->rw_array_index];
+        if (e->delete != 0) { // delete
+          self->raw_body_data = &self->raw_body_data[mp->raw_len];
+          self->raw_body_data_len -= mp->raw_len;
+          mp->written_to_brigade = 1;
+        } else if (e->new_value != NULL) { // new value
+          if (*freebytes >= mp->raw_len_modified) {
+            int key_len = mp->value_addr-mp->key_addr;
+            if ((rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, key_len)) != APR_SUCCESS) { return rv;}
+            self->raw_body_data_len -= key_len;
+            self->raw_body_data = &self->raw_body_data[key_len];
+
+            // remove old value fom raw_body_data
+            self->raw_body_data = &self->raw_body_data[strlen(e->value)];
+            self->raw_body_data_len -= strlen(e->value);
+            // write new value
+            if ((rv = apr_brigade_write(bb, NULL, NULL, e->new_value, strlen(e->new_value))) != APR_SUCCESS) { return rv;}
+            // write rest of multipartdata
+            int rest_len = &mp->multipart_addr[mp->raw_len] - self->raw_body_data;
+            if ((rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, rest_len)) != APR_SUCCESS) { return rv;}
+            self->raw_body_data_len -= rest_len;
+            self->raw_body_data = &self->raw_body_data[rest_len];
+            *freebytes -= mp->raw_len_modified;
+            mp->written_to_brigade = 1;
+          } else {
+            return PARP_ERR_BRIGADE_FULL;
+          }
+        } else { // no changes
+          if (*freebytes >= mp->raw_len) {
+            if ((rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, mp->raw_len)) != APR_SUCCESS) { return rv;}
+            self->raw_body_data = &self->raw_body_data[mp->raw_len];
+            self->raw_body_data_len -= mp->raw_len;
+            *freebytes -= mp->raw_len;
+            mp->written_to_brigade = 1;
+          } else {
+            return PARP_ERR_BRIGADE_FULL;
+          }
+        }
+
+      } else if (mp->multipart_parameters->nelts > 0 && mp->rw_array_index < 0) { // nested multipart
+        if ((rv = parp_write_nested_multipart(self, bb, freebytes, mp)) != APR_SUCCESS) {
+          return rv;
+        }
       }
     }
+    // writing end boundary
+    int rest_len = &multipart->multipart_addr[multipart->raw_len] - self->raw_body_data;
+    if (rest_len > 0) {
+      if (*freebytes >= rest_len) {
+        if ((rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, rest_len)) != APR_SUCCESS) { return rv;}
+        self->raw_body_data = &self->raw_body_data[rest_len];
+        self->raw_body_data_len -= rest_len;
+        multipart->written_to_brigade = 1;
+        *freebytes -= rest_len;
+      } else {
+        return PARP_ERR_BRIGADE_FULL;
+      }
+    }
+
+
   }
-  /* no element to insert */
-  return NULL;
+  return APR_SUCCESS;
 }
 
 /**
@@ -855,11 +1169,11 @@ static parp_body_entry_t *parp_get_modified(parp_t *self) {
  *
  * @return any apr status
  */
-AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f, 
-                                              apr_bucket_brigade * bb, 
-					      ap_input_mode_t mode, 
-					      apr_read_type_e block, 
-					      apr_off_t nbytes) {
+AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
+    apr_bucket_brigade * bb, ap_input_mode_t mode, apr_read_type_e block,
+    apr_off_t nbytes) {
+
+  int i;
   apr_status_t rv;
   apr_bucket *e;
   apr_size_t len;
@@ -867,43 +1181,190 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
   apr_off_t read = 0;
   parp_t *self = f->ctx;
 
-  if(self == NULL || (f->r && f->r->status != 200)) {
+  if (self == NULL || (f->r && f->r->status != 200)) {
     /* nothing to do ... */
     return ap_get_brigade(f->next, bb, mode, block, nbytes);
   }
-  
-  if(self->use_raw) {
+
+  if (self->use_raw_body) {
+    parp_entry_t *rw_entries = (parp_entry_t *) self->rw_params->elts;
     /* forward data from the raw buffer and apply modifications */
-    apr_off_t bytes = nbytes <= self->raw_data_len ? nbytes : self->raw_data_len;
-    parp_body_entry_t *element = parp_get_modified(self);
-    if(element && ((element->value_addr - self->raw_data) < bytes)) {
-      /* element in range! */
-      bytes = element->value_addr - self->raw_data;
-    } else {
-      element = NULL;
-    }
-    rv = apr_brigade_write(bb, NULL, NULL, self->raw_data, bytes);
-    self->raw_data = &self->raw_data[bytes];
-    self->raw_data_len -= bytes;
-    if(element) {
-      apr_off_t slen = strlen(element->new_value);
-      apr_off_t olen = strlen(element->value);
-      apr_off_t freelen = nbytes - bytes; /* remaining bytes accepted by the reader */
-      /* send data if:
-         - there is still enough space (requested nbytes)
-         - we did not send any data from the inital raw buffer (already skipped last call)
-         => TODO: handle the case where size "slen" exeedes nbytes */
-      if((freelen >= slen) || bytes) {
-        rv = apr_brigade_write(bb, NULL, NULL, element->new_value, slen);
-        self->raw_data = &self->raw_data[olen];
-        self->raw_data_len -= olen;
+    apr_off_t bytes = nbytes <= self->raw_body_data_len ? nbytes : self->raw_body_data_len;
+    apr_off_t freebytes = nbytes;
+
+    if (self->content_typeclass == FORMDATA) {
+
+      parp_body_structure_t *body_structure_entries =
+          (parp_body_structure_t *) self->rw_params_body_structure->elts;
+      for (i = 0; i < self->rw_params_body_structure->nelts; ++i) {
+        parp_body_structure_t *bs = &body_structure_entries[i];
+
+        if (bs->rw_array_index >= 0 && bs->rw_array_index < self->rw_params->nelts
+            && bs->written_to_brigade == 0) {
+          parp_entry_t *e = &rw_entries[bs->rw_array_index];
+          char *tmp_param = NULL;
+          if (e->new_value != NULL) {
+            tmp_param = apr_pstrcat(self->pool, e->key, "=", e->new_value, NULL);
+          } else if (e->delete == 0) { // value has not changed and is not delete
+            tmp_param = apr_pstrcat(self->pool, e->key, "=", e->value, NULL);
+          }
+          if (tmp_param != NULL) {
+            if (self->flags & PARP_FLAGS_FIRST_PARAM_WRITTEN) {
+              tmp_param = apr_pstrcat(self->pool, "&", tmp_param, NULL);
+            } else {
+              self->flags |= PARP_FLAGS_FIRST_PARAM_WRITTEN;
+            }
+            apr_off_t slen = strlen(tmp_param);
+            if (freebytes >= slen) { // enough space in brigade
+              if ((rv = apr_brigade_write(bb, NULL, NULL, tmp_param, strlen(tmp_param))) != APR_SUCCESS) {
+                return rv;
+              }
+              bs->written_to_brigade = 1;
+              freebytes -= slen;
+              self->raw_body_data = &self->raw_body_data[bs->raw_len];
+              self->raw_body_data_len -= bs->raw_len;
+              if (self->raw_body_data[0] == '&') {
+                self->raw_body_data++;
+                self->raw_body_data_len--;
+              }
+            } else {
+              break; // not enough space in brigade process further in the next round
+            }
+
+          } else {
+            bs->written_to_brigade = 1;
+            self->raw_body_data = &self->raw_body_data[bs->raw_len];
+            self->raw_body_data_len -= bs->raw_len;
+            if (self->raw_body_data[0] == '&') {
+              self->raw_body_data++;
+              self->raw_body_data_len--;
+            }
+          }
+        }
+      }
+      if (i == self->rw_params_body_structure->nelts) { // all parameters written, clean raw_body_data up
+        if (self->raw_body_data_len > 0) {
+          if (freebytes >= self->raw_body_data_len) {
+            rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, self->raw_body_data_len);
+            freebytes -= self->raw_body_data_len;
+            self->raw_body_data = &self->raw_body_data[self->raw_body_data_len];
+            self->raw_body_data_len = 0;
+          } else {
+            rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, freebytes);
+            freebytes = 0;
+            self->raw_body_data = &self->raw_body_data[freebytes];
+            self->raw_body_data_len -= freebytes;
+          }
+        }
+      }
+    } else if (self->content_typeclass == MULTIPART) {
+
+      parp_body_structure_t *body_structure_entries =
+                (parp_body_structure_t *) self->rw_params_body_structure->elts;
+      for (i = 0; i < self->rw_params_body_structure->nelts; ++i) {
+        parp_body_structure_t *bs = &body_structure_entries[i];
+
+        // write preamble if exist
+        bytes = bs->multipart_addr - self->raw_body_data;
+        if (bytes > 0) {
+          if (freebytes >= bytes) {
+            rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, bytes);
+            self->raw_body_data = &self->raw_body_data[bytes];
+            self->raw_body_data_len -= bytes;
+            freebytes -= bytes;
+          } else {
+            rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, freebytes);
+            self->raw_body_data = &self->raw_body_data[freebytes];
+            self->raw_body_data_len -= freebytes;
+            freebytes = 0;
+            break;
+          }
+        }
+        if (bs->written_to_brigade == 0) {
+          if (bs->multipart_parameters && bs->multipart_parameters->nelts == bs->multipart_parameters_ndelete) { // all multipart elements are deleted
+            self->raw_body_data = &self->raw_body_data[bs->raw_len];
+            self->raw_body_data_len -= bs->raw_len;
+            bs->written_to_brigade = 1;
+          } else {
+            parp_body_structure_t *multipart_param_entries =
+                            (parp_body_structure_t *) bs->multipart_parameters->elts;
+            for (i = 0; i < bs->multipart_parameters->nelts; ++i) {
+              parp_body_structure_t *mp = &multipart_param_entries[i];
+              if (mp->written_to_brigade == 0) {
+                if (mp->rw_array_index >= 0 && mp->rw_array_index < self->rw_params->nelts) {
+                  parp_entry_t *e = &rw_entries[mp->rw_array_index];
+                  if (e->delete != 0) { // delete
+                    self->raw_body_data = &self->raw_body_data[mp->raw_len];
+                    self->raw_body_data_len -= mp->raw_len;
+                    mp->written_to_brigade = 1;
+                  } else if (e->new_value != NULL) { // new value
+
+                    if (freebytes >= mp->raw_len_modified) {
+                      int key_len = mp->value_addr - mp->key_addr;
+
+                      if ((rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, key_len)) != APR_SUCCESS) { return rv;}
+                      self->raw_body_data_len -= key_len;
+                      self->raw_body_data = &self->raw_body_data[key_len];
+
+                      // remove old value fom raw_body_data
+                      self->raw_body_data = &self->raw_body_data[strlen(e->value)];
+                      self->raw_body_data_len -= strlen(e->value);
+                      // write new value
+                      if ((rv = apr_brigade_write(bb, NULL, NULL, e->new_value, strlen(e->new_value))) != APR_SUCCESS) { return rv;}
+                      // write rest of multipartdata
+                      int rest_len = &mp->multipart_addr[mp->raw_len] - self->raw_body_data;
+                      if ((rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, rest_len)) != APR_SUCCESS) { return rv;}
+                      self->raw_body_data_len -= rest_len;
+                      self->raw_body_data = &self->raw_body_data[rest_len];
+                      mp->written_to_brigade = 1;
+                    } else {
+                      return APR_SUCCESS;
+                    }
+                  } else { // no changes
+                    if (freebytes >= mp->raw_len) {
+                      if ((rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, mp->raw_len)) != APR_SUCCESS) { return rv;}
+                      self->raw_body_data = &self->raw_body_data[mp->raw_len];
+                      self->raw_body_data_len -= mp->raw_len;
+                      mp->written_to_brigade = 1;
+                    }
+                  }
+
+                } else if (mp->multipart_parameters && mp->multipart_parameters->nelts > 0 && mp->rw_array_index < 0) { // nested multipart
+                  rv = parp_write_nested_multipart(self, bb, &freebytes, mp);
+                  if (rv == PARP_ERR_BRIGADE_FULL) {
+                    return APR_SUCCESS;
+                  } else if (rv != APR_SUCCESS) {
+                    return rv;
+                  }
+                  mp->written_to_brigade = 1;
+                }
+              }
+            }
+            bs->written_to_brigade = 1;
+          }
+        }
+        // write postamble if exist
+        if (self->raw_body_data_len > 0) {
+          if (freebytes >= self->raw_body_data_len) {
+            rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, self->raw_body_data_len);
+            freebytes -= self->raw_body_data_len;
+            self->raw_body_data = &self->raw_body_data[self->raw_body_data_len];
+            self->raw_body_data_len = 0;
+          } else {
+            rv = apr_brigade_write(bb, NULL, NULL, self->raw_body_data, freebytes);
+            freebytes = 0;
+            self->raw_body_data = &self->raw_body_data[freebytes];
+            self->raw_body_data_len -= freebytes;
+          }
+        }
       }
     }
-    if(self->raw_data_len == 0) {
-      /* our work is done so remove this filter */
+
+    if (self->raw_body_data_len == 0) {
       ap_remove_input_filter(f);
     }
-  } else {
+  }
+  else {
     /* transparent forwarding */
     /* do never send a bigger brigade than request with "nbytes"! */
     while (read < nbytes && !APR_BRIGADE_EMPTY(self->bb)) {
@@ -920,7 +1381,7 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
       }
       APR_BUCKET_REMOVE(e);
       APR_BRIGADE_INSERT_TAIL(bb, e);
-      read += len; 
+      read += len;
     }
     if (APR_BRIGADE_EMPTY(self->bb)) {
       /* our work is done so remove this filter */
@@ -970,11 +1431,11 @@ AP_DECLARE(char *) parp_get_error(parp_t *self) {
 AP_DECLARE(apr_table_t *)parp_hp_table(request_rec *r) {
   parp_t *parp = ap_get_module_config(r->request_config, &parp_module);
   apr_table_t *tl = NULL;
-  if(parp) {
+  if (parp) {
     parp_get_params(parp, &tl);
   }
   return tl;
-}  
+}
 
 /**
  * Optional function which may be used by Apache modules
@@ -989,34 +1450,167 @@ AP_DECLARE(apr_table_t *)parp_hp_table(request_rec *r) {
 AP_DECLARE(const char *)parp_body_data(request_rec *r, apr_size_t *len) {
   parp_t *parp = ap_get_module_config(r->request_config, &parp_module);
   *len = 0;
-  if(parp && parp->data) {
-    *len = parp->len;
-    return parp->data;
+  if (parp && parp->data_body) {
+    *len = parp->len_body;
+    return parp->data_body;
   }
   return NULL;
 }
 
 /**
  * Verifies if some values have been changed and adjust content length header. Also
- * sets the "use_raw" flag to signalize the input filter to forward the modifed data.
+ * sets the "use_raw_body" flag to signalize the input filter to forward the modifed data.
  */
-static void parp_update_content_length(request_rec *r, parp_t *self, apr_off_t *contentlen) {
-  apr_off_t len = *contentlen;
+static void parp_update_content_length_multipart(parp_t *self, parp_body_structure_t *parent,
+    apr_off_t *contentlen) {
+
   int i;
-  parp_body_entry_t *entries = (parp_body_entry_t *)self->rw_body_params->elts;
-  for(i = 0; i < self->rw_body_params->nelts; ++i) {
-    parp_body_entry_t *b = &entries[i];
-    if(b->new_value) {
-      len = len + strlen(b->new_value) - strlen(b->value);
-      self->use_raw = 1;
+  parp_entry_t *rw_entries = (parp_entry_t *) self->rw_params->elts;
+
+  parp_body_structure_t *body_structure_entries =
+      (parp_body_structure_t *) parent->multipart_parameters->elts;
+  for (i = 0; i < parent->multipart_parameters->nelts; ++i) {
+    parp_body_structure_t *bs = &body_structure_entries[i];
+    if (bs->rw_array_index == -1 && bs->multipart_parameters != NULL) { //multipart
+      parp_update_content_length_multipart(self,bs, contentlen);
+      if (bs->multipart_parameters_ndelete == bs->multipart_parameters->nelts) {
+        *contentlen = *contentlen - bs->raw_len_modified;
+        parent->raw_len_modified -= bs->raw_len;
+        parent->multipart_parameters_ndelete++;
+      }
+    } else {
+      if (bs->rw_array_index >= 0 && bs->rw_array_index < self->rw_params->nelts) { // valid index
+        parp_entry_t *e = &rw_entries[bs->rw_array_index];
+        if (e->new_value != NULL) {
+          *contentlen = *contentlen + strlen(e->new_value) - strlen(e->value);
+          self->use_raw_body = 1;
+        } else if (e->delete != 0) {
+          *contentlen = *contentlen - bs->raw_len;
+          parent->raw_len_modified -= bs->raw_len;
+          parent->multipart_parameters_ndelete++;
+          self->use_raw_body = 1;
+        }
+      }
     }
   }
-  if(apr_table_get(r->headers_in, "Content-Length")) {
-    apr_table_set(r->headers_in, "Content-Length", apr_psprintf(r->pool, "%"APR_OFF_T_FMT, len));
-  }
-  *contentlen = len;
 }
 
+/**
+ * Verifies if some values have been changed and adjust content length header. Also
+ * sets the "use_raw_body" flag to signalize the input filter to forward the modifed data.
+ */
+static void parp_update_content_length(request_rec *r, parp_t *self, // TODO
+    apr_off_t *contentlen) {
+
+  int i;
+  if (self->rw_params_body_structure && self->rw_params) {
+    parp_entry_t *rw_entries = (parp_entry_t *) self->rw_params->elts;
+    parp_body_structure_t *body_structure_entries =
+        (parp_body_structure_t *) self->rw_params_body_structure->elts;
+    for (i = 0; i < self->rw_params_body_structure->nelts; ++i) {
+      parp_body_structure_t *bs = &body_structure_entries[i];
+
+      if (bs->rw_array_index >= 0 && bs->multipart_parameters == NULL) { // no multipart
+        parp_entry_t *pe = &rw_entries[bs->rw_array_index];
+        if (pe->new_value) {
+          int diff = strlen(pe->new_value) - strlen(pe->value);
+          *contentlen = *contentlen + diff;
+          bs->raw_len_modified = bs->raw_len_modified + diff;
+          self->use_raw_body = 1;
+        }
+        else if (pe->delete == 1) {
+          int temp_len = strlen(pe->key) - 1 - strlen(pe->value);
+          if (*contentlen == temp_len) {
+            *contentlen = 0;
+            bs->raw_len_modified = 0;
+          }
+          else {
+            *contentlen = *contentlen - temp_len - 1; // remove also '&'
+            bs->raw_len_modified -= temp_len;
+          }
+          self->use_raw_body = 1;
+        }
+      }
+      else { // multipart
+        parp_update_content_length_multipart(self, bs, contentlen);
+        if (bs->multipart_parameters_ndelete == bs->multipart_parameters->nelts) {
+          *contentlen = *contentlen - bs->raw_len_modified;
+        }
+      }
+    }
+    if (apr_table_get(r->headers_in, "Content-Length")) {
+      apr_table_set  (r->headers_in, "Content-Length", apr_psprintf(r->pool, "%"APR_OFF_T_FMT, *contentlen));
+    }
+  }
+}
+
+
+static void parp_update_query_parameter(request_rec *r, parp_t *self) {
+
+  int i;
+  // update query parameters
+  if (!apr_is_empty_array(self->rw_params_query_structure)) {
+    char *new_arg = NULL;
+    int query_has_changed = 0;
+
+    parp_entry_t *rw_entries = (parp_entry_t *) self->rw_params->elts;
+    parp_query_structure_t *query_structure_entries =
+        (parp_query_structure_t *) self->rw_params_query_structure->elts;
+    for (i = 0; i < self->rw_params_query_structure->nelts; ++i) {
+      parp_query_structure_t *qs = &query_structure_entries[i];
+      if (qs->rw_array_index >= 0 && qs->rw_array_index < self->rw_params->nelts) {
+        parp_entry_t *e = &rw_entries[qs->rw_array_index];
+        char *tmp_param = NULL;
+        if (e->new_value != NULL) {
+          tmp_param = apr_pstrcat(self->pool, e->key, "=", e->new_value, NULL);
+          query_has_changed = 1;
+        } else if (e->delete != 0) {
+          query_has_changed = 1;
+        } else {
+          tmp_param = apr_pstrcat(self->pool, e->key, "=", e->value, NULL);
+        }
+        if (tmp_param != NULL) {
+          if (new_arg != NULL) {
+            new_arg = apr_pstrcat(self->pool, new_arg, "&", tmp_param, NULL);
+          } else {
+            new_arg = apr_pstrdup(self->pool, tmp_param);
+          }
+        }
+      }
+    }
+    if (query_has_changed == 1) {
+      char *unparsed_uri = apr_pstrdup(self->pool, r->unparsed_uri);
+
+      char *anchorstart = strchr(unparsed_uri, '#');
+      char *querystart = strchr(unparsed_uri, '?');
+      if (querystart != NULL) {
+        querystart[0] = '\0';
+      }
+
+      char *new_uri;
+      if (new_arg != NULL) {
+        new_uri = apr_pstrcat(self->pool, unparsed_uri, "?", new_arg, NULL);
+      }
+      else {
+        new_uri = apr_pstrcat(self->pool, unparsed_uri, NULL);
+      }
+      if (anchorstart != NULL) {
+        new_uri = apr_pstrcat(self->pool, new_uri, anchorstart, NULL);
+      }
+
+      // update r->the_request
+      char *hp = strstr(r->the_request, r->unparsed_uri);
+      if(hp) {
+        hp[0] = '\0';
+        r->the_request = apr_pstrdup(r->pool, r->the_request);
+        hp += strlen(r->unparsed_uri);
+        r->the_request = apr_pstrcat(r->pool, r->the_request, new_uri, hp, NULL);
+      }
+      // restore all uri parameter
+      ap_parse_uri(r, new_uri);
+    }
+  }
+}
 /************************************************************************
  * handlers
  ***********************************************************************/
@@ -1033,12 +1627,12 @@ static void parp_update_content_length(request_rec *r, parp_t *self, apr_off_t *
  */
 static int parp_header_parser(request_rec * r) {
   apr_status_t status = DECLINED;
-  if(ap_is_initial_req(r)) {
+  if (ap_is_initial_req(r)) {
     const char *e = apr_table_get(r->notes, "parp");
-    if(e == NULL) {
+    if (e == NULL) {
       e = apr_table_get(r->subprocess_env, "parp");
     }
-    if(e == NULL) {
+    if (e == NULL) {
       /* no event */
       return DECLINED;
     } else {
@@ -1046,22 +1640,24 @@ static int parp_header_parser(request_rec * r) {
       parp_t *parp = parp_new(r, PARP_FLAGS_NONE);
       ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
                     PARP_LOG_PFX(000)"enabled (%s)", e);
-      
+
       status = parp_read_params(parp);
       ap_set_module_config(r->request_config, &parp_module, parp);
       ap_add_input_filter("parp-forward-filter", parp, r, r->connection);
-      if(status == APR_SUCCESS) {
+      if (status == APR_SUCCESS) {
         apr_off_t contentlen;
         parp_get_params(parp, &tl);
         apr_brigade_length(parp->bb, 1, &contentlen);
+
         status = parp_run_hp_hook(r, tl);
-        if(parp->rw_body_params) {
-          parp_run_modify_body_hook(r, parp->rw_body_params);
+        if (parp->rw_params) {
+          parp_run_modify_body_hook(r, parp->rw_params);
           parp_update_content_length(r, parp, &contentlen);
+          parp_update_query_parameter(r, parp);
         }
-        apr_table_set(r->subprocess_env,
-                      "PARPContentLength",
-                      apr_psprintf(r->pool, "%"APR_OFF_T_FMT, contentlen));
+        apr_table_set (r->subprocess_env,
+          "PARPContentLength",
+          apr_psprintf(r->pool, "%"APR_OFF_T_FMT, contentlen));
       } else {
         parp_srv_config *sconf = ap_get_module_config(r->server->module_config,
                                                       &parp_module);
@@ -1092,12 +1688,12 @@ static void *parp_srv_config_create(apr_pool_t *p, server_rec *s) {
 }
 
 static void *parp_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
-  parp_srv_config *b = (parp_srv_config *)basev;
-  parp_srv_config *o = (parp_srv_config *)addv;
-  if(o->onerror == -1) {
+  parp_srv_config *b = (parp_srv_config *) basev;
+  parp_srv_config *o = (parp_srv_config *) addv;
+  if (o->onerror == -1) {
     o->onerror = b->onerror;
   }
-  if(o->parsers == NULL) {
+  if (o->parsers == NULL) {
     o->parsers = b->parsers;
   }
   return o;
@@ -1109,11 +1705,11 @@ static void *parp_srv_config_merge(apr_pool_t *p, void *basev, void *addv) {
 const char *parp_error_code_cmd(cmd_parms *cmd, void *dcfg, const char *arg) {
   parp_srv_config *sconf = ap_get_module_config(cmd->server->module_config,
                                                 &parp_module);
-  sconf->onerror  = atoi(arg);
-  if(sconf->onerror == 200) {
+  sconf->onerror = atoi(arg);
+  if (sconf->onerror == 200) {
     return NULL;
   }
-  if((sconf->onerror < 400) || (sconf->onerror > 599)) {
+  if ((sconf->onerror < 400) || (sconf->onerror > 599)) {
     return apr_psprintf(cmd->pool, "%s: error code must be a numeric value between 400 and 599"
                         " (or set 200 to ignore errors)",
                         cmd->directive->directive);
@@ -1127,11 +1723,11 @@ const char *parp_body_data_cmd(cmd_parms *cmd, void *dcfg, const char *arg) {
   if (!sconf->parsers) {
     sconf->parsers = apr_table_make(cmd->pool, 5);
   }
-  apr_table_setn(sconf->parsers, apr_pstrdup(cmd->pool, arg), 
-                (char *)parp_get_body);
+  apr_table_setn(sconf->parsers, apr_pstrdup(cmd->pool, arg),
+      (char *) parp_parser_get_body);
   return NULL;
 }
-  
+
 static const command_rec parp_config_cmds[] = {
   AP_INIT_TAKE1("PARP_ExitOnError", parp_error_code_cmd, NULL,
                 RSRC_CONF,
@@ -1139,10 +1735,10 @@ static const command_rec parp_config_cmds[] = {
                 " to return on parsing errors. Default is 500."
                 " Specify 200 in order to ignore errors."),
   AP_INIT_ITERATE("PARP_BodyData", parp_body_data_cmd, NULL,
-                  RSRC_CONF,
-                  "PARP_BodyData <content-type>, defines content"
-		  " types where only the body data are read. Default is"
-		  " no content type."),
+                RSRC_CONF,
+                "PARP_BodyData <content-type>, defines content"
+                " types where only the body data are read. Default is"
+                " no content type."), 
   { NULL }
 };
 

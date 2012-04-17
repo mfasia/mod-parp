@@ -87,9 +87,9 @@ static apr_status_t parp_appl_modify(request_rec *r, apr_array_header_t *array) 
   /* run for /htt/modify* only */
   if(strstr(r->uri, "/modify") != NULL) {
     int i;
-    parp_body_entry_t *entries = (parp_body_entry_t *)array->elts;
+    parp_entry_t *entries = (parp_entry_t *)array->elts;
     for(i = 0; i < array->nelts; ++i) {
-      parp_body_entry_t *b = &entries[i];
+      parp_entry_t *b = &entries[i];
       if(strcmp(b->value, "changeme") == 0) {
         /* longer */
         b->new_value = "this_has_changed";
@@ -101,6 +101,9 @@ static apr_status_t parp_appl_modify(request_rec *r, apr_array_header_t *array) 
       if(strcmp(b->value, "deletethis") == 0) {
         /* 0 bytes */
         b->new_value = "";
+      }
+      if(strcmp(b->value, "deleteparam") == 0) {
+        b->delete = 1;
       }
     }
   }

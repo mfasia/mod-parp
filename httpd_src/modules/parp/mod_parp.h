@@ -34,12 +34,12 @@
 /**
  * This is the value of the apr_table_t provided within the modify body hook.
  */
-typedef struct {
+typedef struct parp_entry_s{
   const char *key;        /** the key/name of the value read from the request */
   const char *value;      /** the value of the key/name read from the request */
   char *new_value;        /** the new value which may be set/modified by a module */
-  const char *value_addr; /** initial value address pointer, for use by the mod_parp internals */
-} parp_body_entry_t;
+  int delete;             /** indicates to delete the parameter from the request */
+} parp_entry_t;
 
 
 /**************************************************************************
