@@ -2,7 +2,7 @@
 
 . ./include.sh
 
-cd $HTTPD
+cd httpd 
 ./buildconf
 CFLAGS="-g -Wall" ./configure \
   --prefix=$HOME/local \
