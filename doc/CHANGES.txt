@@ -1,3 +1,16 @@
+Version 0.11
+
+  - the array and table entries returned by parp hooks contains the body 
+    as well as the query parameters
+  - the entries returnd by the parp modify_hook contains a field "delete",
+    when it's set to "1" the whole parameter incl. name will be removed
+  - can deal with RFC 1341 Multipart preamble and epilogue
+  - handels content-type text/plain correctly for multipart formdata
+  - new hook: modify_hook (replaces modify_body_hook)
+  - new type: parp_entry_t (replaces parp_body_entry_t)
+  - DEPRECATED: parp_body_entry_t
+  - DEPRECATED: modify_body_hook
+
 Version 0.10
 
   - Error description if reading from client has failed, e.g. connection

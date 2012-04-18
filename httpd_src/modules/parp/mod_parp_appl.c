@@ -216,7 +216,7 @@ static int parp_appl_post_read_request(request_rec * r) {
 static int parp_appl_post_config(apr_pool_t *pconf, apr_pool_t *plog,
                                  apr_pool_t *ptemp, server_rec *bs) {
   if(!m_disable_mod) {
-    APR_OPTIONAL_HOOK(parp, modify_body_hook, parp_appl_modify, NULL, NULL, APR_HOOK_MIDDLE);
+    APR_OPTIONAL_HOOK(parp, modify_hook, parp_appl_modify, NULL, NULL, APR_HOOK_MIDDLE);
   }
   return DECLINED;
 }

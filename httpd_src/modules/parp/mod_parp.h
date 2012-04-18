@@ -41,13 +41,17 @@ typedef struct parp_entry_s{
   int delete;             /** indicates to delete the parameter from the request */
 } parp_entry_t;
 
+/**
+ * DEPRECATED - only for backwards compatibility - use parp_entry_t
+ */
+typedef parp_entry_t parp_body_entry_t;
 
 /**************************************************************************
  * Functions
  **************************************************************************/
 AP_DECLARE(apr_status_t )parp_read_payload(request_rec *r, 
                                            apr_bucket_brigade *out, 
-			      	           char **error); 
+                                           char **error);
 
 /**************************************************************************
  * Hooks 
@@ -76,7 +80,16 @@ AP_DECLARE(apr_status_t )parp_read_payload(request_rec *r,
 APR_DECLARE_EXTERNAL_HOOK(parp, PARP, apr_status_t, hp_hook,
                           (request_rec *r, apr_table_t *table))
 
+/**
+ * DEPRECATED - only for backwards compatibility - use modify_hook
+ */
 APR_DECLARE_EXTERNAL_HOOK(parp, PARP, apr_status_t, modify_body_hook,
+                          (request_rec *r, apr_array_header_t *array))
+
+/**
+ * used to modify the body and query parameters
+ */
+APR_DECLARE_EXTERNAL_HOOK(parp, PARP, apr_status_t, modify_hook,
                           (request_rec *r, apr_array_header_t *array))
 
 APR_DECLARE_OPTIONAL_FN(apr_table_t *, parp_hp_table, (request_rec *));

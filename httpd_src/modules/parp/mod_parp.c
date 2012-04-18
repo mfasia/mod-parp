@@ -158,11 +158,18 @@ APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(parp, PARP, apr_status_t, hp_hook,
     (r, table),
     OK, DECLINED)
 
+/**
+ * DEPRECATED - only for backwards compatibility - use modify_hook
+ */
 APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(parp, PARP, apr_status_t, modify_body_hook,
     (request_rec *r, apr_array_header_t *array),
     (r, array),
     OK, DECLINED)
 
+APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(parp, PARP, apr_status_t, modify_hook,
+    (request_rec *r, apr_array_header_t *array),
+    (r, array),
+    OK, DECLINED)
 /************************************************************************
  * functions
  ***********************************************************************/
@@ -1022,8 +1029,9 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
   parp_parser_f parser;
   request_rec *r = self->r;
   int modify = 0;
-  apr_array_header_t *hs = apr_optional_hook_get("modify_body_hook");
-  if ((hs != NULL) && (hs->nelts > 0)) {
+  apr_array_header_t *hs = apr_optional_hook_get("modify_body_hook"); // only for backwards compatibility
+  apr_array_header_t *hs2 = apr_optional_hook_get("modify_hook");
+  if (((hs != NULL) && (hs->nelts > 0)) || ((hs2 != NULL) && (hs2->nelts > 0))) {
     /* module has registered */
     self->rw_params = apr_array_make(r->pool, 50, sizeof(parp_entry_t));
     modify = 1;
@@ -1034,7 +1042,7 @@ AP_DECLARE(apr_status_t) parp_read_params(parp_t *self) {
           sizeof(parp_query_structure_t));
     }
     if ((status = parp_parser_urlencode(self, QUERY, r->headers_in, r->args,
-        strlen(r->args), self->rw_params_query_structure)) // TODO what happens with the changed query parameters
+        strlen(r->args), self->rw_params_query_structure))
         != APR_SUCCESS) {
       return status;
     }
@@ -1519,7 +1527,7 @@ static void parp_update_content_length(request_rec *r, parp_t *self, // TODO
           self->use_raw_body = 1;
         }
         else if (pe->delete == 1) {
-          int temp_len = strlen(pe->key) - 1 - strlen(pe->value);
+          int temp_len = strlen(pe->key) + 1 + strlen(pe->value);
           if (*contentlen == temp_len) {
             *contentlen = 0;
             bs->raw_len_modified = 0;
@@ -1651,7 +1659,8 @@ static int parp_header_parser(request_rec * r) {
 
         status = parp_run_hp_hook(r, tl);
         if (parp->rw_params) {
-          parp_run_modify_body_hook(r, parp->rw_params);
+          parp_run_modify_body_hook(r, parp->rw_params); // only for backwards compatibility
+          parp_run_modify_hook(r, parp->rw_params);
           parp_update_content_length(r, parp, &contentlen);
           parp_update_query_parameter(r, parp);
         }
