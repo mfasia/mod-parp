@@ -192,6 +192,34 @@ static int parp_appl_handler(request_rec * r) {
 </table>
 </p>
 
+<p>
+Parameter modification:<br>
+mod_parp allows to modify query and body parameters. With the parp modify_hook an array is passed where the values can be modified or deleted.
+The array contains elements with the following structure:
+<table border="0" cellspacing="5" cellpadding="10" width="100%">
+<tr><td bgcolor="#EBE5E0">
+<pre>
+parp_entry_t:
+  key (string):       parameter name
+  value (string):     original parameter value
+  new_value (string): the modified value or NULL, to delete only the value set to "" (empty string)
+  delete (integer):   if set != 0 the whole key/value pair is removed form the request
+
+</pre>
+</td></tr>
+</table>
+</p>
+<p>
+Sample code to modify the parameters you will find in the file:
+<table border="0" cellspacing="5" cellpadding="10" width="100%">
+<tr><td bgcolor="#EBE5E0">
+<pre>
+mod_parp_appl.c
+</pre>
+</td></tr>
+</table>
+</p>
+
 
 <p>
 mod_parp is available at <a href="http://sourceforge.net/projects/parp/">SourceForge.net</a> 
@@ -203,6 +231,6 @@ under the <a href="LICENSE.txt">Apache License Version 2.0</a>.
 </table>
 <hr>
 <a href="http://sourceforge.net/projects/parp/"><img align="right" src="http://sflogo.sourceforge.net/sflogo.php?group_id=230159&amp;type=1" width="88" height="31" border="0" alt="parp at SourceForge.net" /></a>
-<SMALL><SMALL>&copy; 2008-2010, PARP</SMALL></SMALL>
+<SMALL><SMALL>&copy; 2008-2012, PARP</SMALL></SMALL>
 </body>
 </html>

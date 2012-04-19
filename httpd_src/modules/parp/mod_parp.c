@@ -1490,7 +1490,7 @@ static void parp_update_content_length_multipart(parp_t *self, parp_body_structu
       if (bs->rw_array_index >= 0 && bs->rw_array_index < self->rw_params->nelts) { // valid index
         parp_entry_t *e = &rw_entries[bs->rw_array_index];
         if (e->new_value != NULL) {
-          *contentlen = *contentlen + strlen(e->new_value) - strlen(e->value);
+          *contentlen = *contentlen + strlen(e->new_value) - strlen(e->value); // TODO: this is not safe from security coding prospective
           self->use_raw_body = 1;
         } else if (e->delete != 0) {
           *contentlen = *contentlen - bs->raw_len;
@@ -1507,7 +1507,7 @@ static void parp_update_content_length_multipart(parp_t *self, parp_body_structu
  * Verifies if some values have been changed and adjust content length header. Also
  * sets the "use_raw_body" flag to signalize the input filter to forward the modifed data.
  */
-static void parp_update_content_length(request_rec *r, parp_t *self, // TODO
+static void parp_update_content_length(request_rec *r, parp_t *self,
     apr_off_t *contentlen) {
 
   int i;
@@ -1521,7 +1521,7 @@ static void parp_update_content_length(request_rec *r, parp_t *self, // TODO
       if (bs->rw_array_index >= 0 && bs->multipart_parameters == NULL) { // no multipart
         parp_entry_t *pe = &rw_entries[bs->rw_array_index];
         if (pe->new_value) {
-          int diff = strlen(pe->new_value) - strlen(pe->value);
+          int diff = strlen(pe->new_value) - strlen(pe->value);  // TODO: this is not safe from security coding prospective
           *contentlen = *contentlen + diff;
           bs->raw_len_modified = bs->raw_len_modified + diff;
           self->use_raw_body = 1;
