@@ -21,6 +21,16 @@ _EXPECT . "==OK=="
 _WAIT
 
 _REQ localhost 16100
+__POST /htt/modify?xx=yy&param4=deleteparam&param5=value5 HTTP/1.1
+__Host: localhost
+__Content-Type: apPlication/x-www-form-urlencoded
+__Content-Length: AUTO
+__
+__param1=value1&param2=changeme&param3=value3
+_EXPECT . "==OK=="
+_WAIT
+
+_REQ localhost 16100
 __POST /htt/modify?param4=deleteparam&param5=value5 HTTP/1.1
 __Host: localhost
 __Content-Type: apPlication/x-www-form-urlencoded
@@ -210,7 +220,21 @@ __Content-Type: text/plain
 __
 __==OK==
 _RES
-_EXPECT . "/htt/modify.param5=value5"
+_EXPECT . "/htt/modify\?xx=yy&param5=value5"
+_EXPECT . "!param4"
+_EXPECT . "!deleteparam"
+_EXPECT . "!changeme"
+_EXPECT . "param1=value1&param2=this_has_changed&param3=value3"
+_EXPECT . "Content-Length: 53"
+_WAIT
+__HTTP/1.1 200 OK
+__Content-Length: AUTO 
+__Content-Type: text/plain
+__
+__==OK==
+
+_RES
+_EXPECT . "/htt/modify\?param5=value5"
 _EXPECT . "!param4"
 _EXPECT . "!deleteparam"
 _EXPECT . "!changeme"
