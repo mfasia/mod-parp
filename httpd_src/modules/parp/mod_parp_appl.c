@@ -209,6 +209,9 @@ static int parp_appl_post_read_request(request_rec * r) {
         apr_table_set(r->subprocess_env, "parp", "on");
 //      }
 //    }
+
+        // test if we can remove parameter
+        apr_table_add(r->notes, "PARP_DELETE_PARAM", "alwaysremoveme");
   }
   return DECLINED;
 }

@@ -1,3 +1,8 @@
+Version
+
+  - Allows other modules to delete parameters by adding the parameter
+    name to the PARP_DELETE_PARAM r->notes table.
+
 Version 0.11
 
   - the array and table entries returned by parp hooks contains the body 

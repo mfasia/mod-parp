@@ -9,7 +9,7 @@
  * |P|ParameterParser|_|    
  * http://parp.sourceforge.net
  *
- * Copyright (C) 2008-2010 Christian Liesch/Pascal Buchbinder
+ * Copyright (C) 2008-2012 Christian Liesch / Pascal Buchbinder / Lukas Funk
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements. 
@@ -30,7 +30,7 @@
  * Version
  ***********************************************************************/
 static const char revision[] = "$Id$";
-static const char g_revision[] = "0.11";
+static const char g_revision[] = "0.12";
 
 /************************************************************************
  * Includes
@@ -56,6 +56,7 @@ static const char g_revision[] = "0.11";
  * defines
  ***********************************************************************/
 #define PARP_LOG_PFX(id)  "mod_parp("#id"): "
+#define PARP_DELETE_PARAM "PARP_DELETE_PARAM"
 
 #define PARP_FLAGS_NONE 0
 #define PARP_FLAGS_CONT_ON_ERR 1
@@ -1624,6 +1625,39 @@ static void parp_update_query_parameter(request_rec *r, parp_t *self) {
  ***********************************************************************/
 
 /**
+ * Hook to delete parameter which has been defined by the notes PARP_DELETE_PARAM.
+ */
+static apr_status_t parp_delete_parameter(request_rec *r, apr_array_header_t *array) {
+  int i;
+  parp_entry_t *entries = (parp_entry_t *)array->elts;
+
+  /* create a table from the r->notes with all defined parameter names to be remoced */
+  apr_table_t *param_table = apr_table_make(r->pool, 10);
+  apr_table_entry_t *e = (apr_table_entry_t *) apr_table_elts(r->notes)->elts;
+  for(i = 0; i < apr_table_elts(r->notes)->nelts; ++i) {
+    if(e[i].key && e[i].val && strcmp(e[i].key, PARP_DELETE_PARAM) == 0) {
+      apr_table_set(param_table, e[i].val, "");
+    }
+  }
+
+  /* iterate through the received parameters and remove those within our param_table */
+  for(i = 0; i < array->nelts; ++i) {
+    parp_entry_t *b = &entries[i];
+    if(apr_table_get(param_table, b->key)) {
+      b->delete = 1;
+    }
+  }
+  return DECLINED;
+}
+
+static int parp_post_config(apr_pool_t *pconf, apr_pool_t *plog,
+                            apr_pool_t *ptemp, server_rec *bs) {
+  // register hook to delete parameters as defined by r->notes
+  APR_OPTIONAL_HOOK(parp, modify_hook, parp_delete_parameter, NULL, NULL, APR_HOOK_MIDDLE);
+  return DECLINED;
+}
+
+/**
  * Header parser starts body parsing when reading "parp" in
  * the process environment or request notes and calls all
  * functions  registered to the hs_hook.
@@ -1758,6 +1792,7 @@ static void parp_register_hooks(apr_pool_t * p) {
   static const char *pre[] = { "mod_setenvif.c", "mod_deflate.c", NULL };
   /* header parser is invoked after mod_setenvif */
   ap_hook_header_parser(parp_header_parser, pre, NULL, APR_HOOK_MIDDLE);
+  ap_hook_post_config(parp_post_config, pre, NULL, APR_HOOK_MIDDLE);
   ap_register_input_filter("parp-forward-filter", parp_forward_filter, NULL, AP_FTYPE_RESOURCE);
   APR_REGISTER_OPTIONAL_FN(parp_hp_table);
   APR_REGISTER_OPTIONAL_FN(parp_body_data);
