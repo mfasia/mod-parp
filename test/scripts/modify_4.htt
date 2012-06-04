@@ -16,7 +16,7 @@ END
 SERVER 16101
 
 _RES
-_EXPECT . "param1=value1&param2=this_has_changedparam3=value3"
+_EXPECT . "param1=value1&param2=this_has_changed&param3=value3"
 _WAIT
 __HTTP/1.1 200 OK
 __Content-Length: AUTO 
