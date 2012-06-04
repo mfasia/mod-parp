@@ -1,4 +1,4 @@
-Version
+Version 0.12
 
   - Allows other modules to delete parameters by adding the parameter
     name to the PARP_DELETE_PARAM r->notes table.

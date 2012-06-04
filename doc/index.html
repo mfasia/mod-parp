@@ -212,6 +212,11 @@ parp_entry_t:
 <p>
 Sample code to modify the parameters is available in the following file: <a href="http://parp.cvs.sourceforge.net/viewvc/parp/parp/httpd_src/modules/parp/mod_parp_appl.c?content-type=text%2Fplain">mod_parp_appl.c</a>.
 </p>
+<p>
+You may also remove parameters from the request by adding the name of the 
+parameter to remove to the request notes variable PARP_DELETE_PARAM. </br>
+Example: </br>&nbsp;&nbsp;<code>apr_table_add(r->notes, "PARP_DELETE_PARAM", "special");</code>
+</p>
 
 
 <p>
