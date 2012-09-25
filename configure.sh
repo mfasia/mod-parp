@@ -13,7 +13,6 @@ if [ `echo $HTTPD | grep -c "httpd-2.4"` -eq 1 ]; then
    --enable-mods-static=all \
    --with-module=parp:parp,parp:parp_appl
   RC=$?
-  fi
 else
   echo "configure Apache 2.x"
   ./buildconf
