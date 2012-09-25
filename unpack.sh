@@ -2,5 +2,6 @@
 
 . ./include.sh
 
-tar xzvSpf ./3thrdparty/$HTTPD.tar.gz
+tar xzSpf ./3thrdparty/$HTTPD.tar.gz
+rm -f httpd
 ln -s $HTTPD httpd

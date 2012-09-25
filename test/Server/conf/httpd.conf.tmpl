@@ -1,7 +1,9 @@
 StartServers            1
+<IfModule prefork.c>
 MinSpareServers         1
 MaxSpareServers         2
 MaxClients              20
+</IfModule>
 MaxRequestsPerChild     1000000
 ServerName              myhost
 User                    ##USER##
@@ -13,13 +15,17 @@ ServerSignature         off
 HostnameLookups         off
 UseCanonicalName        on
 UseCanonicalPhysicalPort on
+<IfDefine !apache24>
 LockFile                ##SERVER_ROOT##/logs/accept.lock
+</IfDefine>
 Timeout                 300
 KeepAlive               On
 MaxKeepAliveRequests    100
 
 KeepAliveTimeout        64
+<IfDefine !apache24>
 DefaultType             text/plain
+</IfDefine>
 
 LogFormat               "%h %l %u %t \"%r\" %>s %b \"%{User-Agent}i\" %T body=%{PARPContentLength}e #%P"
 
@@ -28,8 +34,10 @@ ErrorLog                ##SERVER_ROOT##/logs/error_log
 TransferLog             ##SERVER_ROOT##/logs/access_log
 PidFile                 ##SERVER_ROOT##/logs/pid
 
+<IfDefine !apache24>
 LoadModule              parp_module ##SERVER_ROOT##/../../httpd/modules/parp/.libs/mod_parp.so
 LoadModule              parp_appl_module ##SERVER_ROOT##/../../httpd/modules/parp/.libs/mod_parp_appl.so
+</IfDefine>
 
 AddOutputFilter         INCLUDES .shtml
 Options                 Includes
@@ -68,7 +76,7 @@ Listen       127.0.0.1:16100
 
    ScriptAlias /cgi/ ##SERVER_ROOT##/htdocs/cgi/
    <Location /cgi>
-       Options ExecCGI -MultiViews +SymLinksIfOwnerMatch
+       Options +ExecCGI -MultiViews +SymLinksIfOwnerMatch
        Order allow,deny
        Allow from all
    </Location>
