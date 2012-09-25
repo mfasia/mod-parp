@@ -22,6 +22,9 @@ Timeout                 300
 KeepAlive               On
 MaxKeepAliveRequests    100
 
+# Apache 2.4.3 bug requires a LimitRequestBody setting
+LimitRequestBody        536870912
+
 KeepAliveTimeout        64
 <IfDefine !apache24>
 DefaultType             text/plain
