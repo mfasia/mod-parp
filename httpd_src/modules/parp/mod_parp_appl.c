@@ -173,17 +173,21 @@ static int parp_appl_handler(request_rec * r) {
   /*
    * Access the body data using the optional function
    */
-  parp_appl_body_data =  APR_RETRIEVE_OPTIONAL_FN(parp_body_data);
-  data = apr_pstrndup(r->pool, parp_appl_body_data(r, &len), len);
-  if (data) {
-    int i;
-    data[len] = 0;
-    for (i = 0; i < len; i++) {
-      if (data[i] < 32 && data[i] != '\n' && data[i] != '\r') {
-	data[i] = '.';
+  {
+    const char *body;
+    parp_appl_body_data =  APR_RETRIEVE_OPTIONAL_FN(parp_body_data);
+    body = parp_appl_body_data(r, &len);
+    data = apr_pstrndup(r->pool, body, len); // copy the data because we are modifying it
+    if (data) {
+      int i;
+      data[len] = 0;
+      for (i = 0; i < len; i++) {
+        if (data[i] < 32 && data[i] != '\n' && data[i] != '\r') {
+          data[i] = '.';
+        }
       }
+      ap_rprintf(r, "body: %s\n", ap_escape_html(r->pool, data));
     }
-    ap_rprintf(r, "body: %s\n", ap_escape_html(r->pool, data));
   }
   
   
