@@ -16,11 +16,33 @@ else
         shift
         ../httpd/httpd -d Server $APA24 $@
     else
-	../httpd/httpd -d Server $APA24 -k $1
+	if [ "$1" = "stop" ]; then
+	    ../httpd/httpd -d Server $APA24 -k stop
+	    counter=0
+	    while [ $counter -lt 10 ]; do
+		if [ -f Server/logs/pid ]; then
+		    counter=`expr $counter + 1`
+		    sleep 1
+		else
+		    counter=10
+		fi
+	    done
+	else
+	    ../httpd/httpd -d Server $APA24 -k $1
+	fi
     fi
 fi
 if [ "$1" = "start" ]; then
     sleep 1
+    counter=0
+    while [ $counter -lt 10 ]; do
+	if [ -f Server/logs/pid  ]; then
+	    counter=10
+	else
+	    counter=`expr $counter + 1`
+	    sleep 1
+	fi
+    done
     ps -p `cat Server/logs/pid` 1>/dev/null 2>/dev/null
     echo $?
 fi
