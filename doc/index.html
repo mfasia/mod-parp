@@ -155,6 +155,7 @@ APR_OPTIONAL_HOOK(parp, hp_hook, parp_appl_impl, NULL, NULL, APR_HOOK_MIDDLE);
 
 
 <p>
+<a name="PARP_BodyData"</a>
 Raw body processing:<br>
 mod_parp implements a function to access the raw body data of a HTTP POST request. Specify the raw content type handler using the "PARP_BodyData &lt;type&gt;" directive.
 <table border="0" cellspacing="5" cellpadding="10" width="100%">
@@ -168,6 +169,7 @@ SetEnvIf   Content-Type  text/html        parp
 </pre>
 </td></tr>
 </table>
+You may enable raw body processing for any content type using "*/*" of its type.
 </p>
 <p>
 Sample code to access the raw body data:

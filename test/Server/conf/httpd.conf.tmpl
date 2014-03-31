@@ -77,6 +77,10 @@ Listen       127.0.0.1:16100
 
    PARP_BodyData text/foo text/xml text/html
 
+<IfDefine anybody>
+   PARP_BodyData */*
+</IfDefine>
+
    ScriptAlias /cgi/ ##SERVER_ROOT##/htdocs/cgi/
    <Location /cgi>
        Options +ExecCGI -MultiViews +SymLinksIfOwnerMatch

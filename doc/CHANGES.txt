@@ -1,3 +1,7 @@
+Version 0.13
+
+  - PARP_BodyData supports "*/*" to process any content type.
+
 Version 0.12
 
   - Allows other modules to delete parameters by adding the parameter

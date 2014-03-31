@@ -9,7 +9,7 @@
  * |P|ParameterParser|_|    
  * http://parp.sourceforge.net
  *
- * Copyright (C) 2008-2012 Christian Liesch / Pascal Buchbinder / Lukas Funk
+ * Copyright (C) 2008-2014 Christian Liesch / Pascal Buchbinder / Lukas Funk
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements. 
@@ -30,7 +30,7 @@
  * Version
  ***********************************************************************/
 static const char revision[] = "$Id$";
-static const char g_revision[] = "0.12";
+static const char g_revision[] = "0.13";
 
 /************************************************************************
  * Includes
@@ -857,31 +857,30 @@ static parp_parser_f parp_get_parser(parp_t *self, const char *ct) {
   char *last;
 
   parp_parser_f parser = NULL;
-
+  parp_srv_config *sconf = ap_get_module_config(self->r->server->module_config,
+                                                &parp_module);
+  
   if (ct) {
     type = apr_strtok(apr_pstrdup(self->pool, ct), ";,", &last);
     if (type) {
-      parp_srv_config *sconf =
-          ap_get_module_config(self->r->server->module_config,
-              &parp_module);
       if (sconf->parsers) {
         parser = (parp_parser_f) apr_table_get(sconf->parsers, type);
       }
       if (!parser) {
         parser = (parp_parser_f) apr_table_get(self->parsers, type);
       }
+      if(!parser) {
+        parser = (parp_parser_f) apr_table_get(sconf->parsers, "*/*");
+      }
     }
   }
   if (parser) {
     return parser;
   }
-  else {
-    self->error
-        = apr_psprintf(self->pool,
-            "No parser available for this content type (%s)", ct == NULL ? "-"
-                : ct);
-    return parp_parser_not_impl;
-  }
+  self->error = apr_psprintf(self->pool,
+                             "No parser available for this content type (%s)",
+                             ct == NULL ? "-" : ct);
+  return parp_parser_not_impl;
 }
 
 /**************************************************************************
@@ -1778,10 +1777,11 @@ static const command_rec parp_config_cmds[] = {
                 " to return on parsing errors. Default is 500."
                 " Specify 200 in order to ignore errors."),
   AP_INIT_ITERATE("PARP_BodyData", parp_body_data_cmd, NULL,
-                RSRC_CONF,
-                "PARP_BodyData <content-type>, defines content"
-                " types where only the body data are read. Default is"
-                " no content type."), 
+                  RSRC_CONF,
+                  "PARP_BodyData <content-type>, defines content"
+                  " types where only the body data are read. Default is"
+                  " no content type. Use '*/*' no activate the body read"
+                  " parser for any content type."), 
   { NULL }
 };
 
