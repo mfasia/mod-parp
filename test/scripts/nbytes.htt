@@ -1,0 +1,32 @@
+#
+# tests the "nbytes bug" reported by James Wright
+#
+
+CLIENT
+
+_SET 1k=datadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadatadata
+
+# Simple POST
+_REQ localhost 16100
+__POST /htt/nbytes/post HTTP/1.1
+__Host: localhost
+__Content-Type: apPlication/x-www-form-urlencoded
+__Content-Length: AUTO
+__
+_-alwaysremoveme=123&name2=${1k}${1k}${1k}${1k}${1k}${1k}${1k}${1k}${1k}${1k}${1k}${1k}${1k}${1k}${1k}${1k}
+_EXPECT . "200 OK"
+_WAIT
+
+END
+
+SERVER 16101
+
+_RES
+_WAIT
+__HTTP/1.1 200 OK
+__Content-Length: AUTO 
+__Content-Type: text/plain
+__
+__==OK==
+
+END

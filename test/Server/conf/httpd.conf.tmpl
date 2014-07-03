@@ -81,6 +81,8 @@ Listen       127.0.0.1:16100
    PARP_BodyData */*
 </IfDefine>
 
+   SetEnvIf Request_URI nbytes parp
+
    ScriptAlias /cgi/ ##SERVER_ROOT##/htdocs/cgi/
    <Location /cgi>
        Options +ExecCGI -MultiViews +SymLinksIfOwnerMatch
