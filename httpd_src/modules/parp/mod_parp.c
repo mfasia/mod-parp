@@ -30,7 +30,7 @@
  * Version
  ***********************************************************************/
 static const char revision[] = "$Id$";
-static const char g_revision[] = "0.13";
+static const char g_revision[] = "0.14";
 
 /************************************************************************
  * Includes
@@ -101,6 +101,10 @@ typedef struct parp_s{
   apr_size_t len_query;
   char *data_body;
   apr_size_t len_body;
+
+  char *tmp_buffer;                  /* partial written data */
+  apr_off_t len_tmp_buffer;
+
 } parp_t;
 
 typedef struct parp_query_structure_s{
@@ -128,7 +132,6 @@ typedef struct parp_body_structure_s{
                                        whole multipart must be deleted.*/
 
   int written_to_brigade;
-
 } parp_body_structure_t;
 
 /**
@@ -1011,6 +1014,9 @@ AP_DECLARE(parp_t *) parp_new(request_rec *r, int flags) {
 
   self->recursion = 0;
 
+  self->tmp_buffer = NULL;
+  self->len_tmp_buffer = 0;
+
   return self;
 }
 
@@ -1204,9 +1210,28 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
 
       parp_body_structure_t *body_structure_entries =
           (parp_body_structure_t *) self->rw_params_body_structure->elts;
+
+      if(self->len_tmp_buffer > 0) {
+        // we still have some data left from the last filter call
+        apr_off_t toSend = self->len_tmp_buffer;
+        if(toSend > freebytes) {
+          toSend = freebytes;
+        }
+        self->len_tmp_buffer -= toSend;
+        if ((rv = apr_brigade_write(bb, NULL, NULL, self->tmp_buffer, toSend)) != APR_SUCCESS) {
+          return rv;
+        }
+        self->tmp_buffer += toSend;
+        freebytes -= toSend;
+        if(self->len_tmp_buffer > 0) {
+          // still not done...
+          return APR_SUCCESS;
+        }
+      };
+
       for (i = 0; i < self->rw_params_body_structure->nelts; ++i) {
         parp_body_structure_t *bs = &body_structure_entries[i];
-
+        
         if (bs->rw_array_index >= 0 && bs->rw_array_index < self->rw_params->nelts
             && bs->written_to_brigade == 0) {
           parp_entry_t *e = &rw_entries[bs->rw_array_index];
@@ -1224,7 +1249,7 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
             }
             apr_off_t slen = strlen(tmp_param);
             if (freebytes >= slen) { // enough space in brigade
-              if ((rv = apr_brigade_write(bb, NULL, NULL, tmp_param, strlen(tmp_param))) != APR_SUCCESS) {
+              if ((rv = apr_brigade_write(bb, NULL, NULL, tmp_param, slen)) != APR_SUCCESS) {
                 return rv;
               }
               bs->written_to_brigade = 1;
@@ -1236,9 +1261,27 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
                 self->raw_body_data_len--;
               }
             } else {
-              break; // not enough space in brigade process further in the next round
+              // not enough space in brigade, write as much as we can
+              // ans store the remaining data...
+              if ((rv = apr_brigade_write(bb, NULL, NULL, tmp_param, freebytes)) != APR_SUCCESS) {
+                return rv;
+              }
+              slen -= freebytes;
+              self->len_tmp_buffer = slen;
+              self->tmp_buffer = &tmp_param[freebytes];
+              bs->written_to_brigade = 1;
+              self->raw_body_data = &self->raw_body_data[bs->raw_len];
+              self->raw_body_data_len -= bs->raw_len;
+              if (self->raw_body_data[0] == '&') {
+                self->raw_body_data++;
+                self->raw_body_data_len--;
+              }
+              freebytes = 0;
+              // ...and process further in the next round
+              return APR_SUCCESS;
+              //break;
             }
-
+            
           } else {
             bs->written_to_brigade = 1;
             self->raw_body_data = &self->raw_body_data[bs->raw_len];

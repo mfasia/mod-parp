@@ -1,3 +1,7 @@
+Version 0.14
+
+  - Fixes potential endless loop when processing huge parameters.
+
 Version 0.13
 
   - PARP_BodyData supports "*/*" to process any content type.

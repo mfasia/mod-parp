@@ -7,7 +7,7 @@ ERRORS=0
 WARNINGS=0
 
 ./ctl.sh start
-STDS="main_func.htt loop.htt file.htt big.htt textplain.htt texthtml.htt body.htt anybody.htt mix.htt PARPContentLength.htt modify.htt modify_2.htt modify_3.htt modify_4.htt chunked.htt"
+STDS="main_func.htt loop.htt file.htt big.htt textplain.htt texthtml.htt body.htt anybody.htt mix.htt PARPContentLength.htt modify.htt modify_2.htt modify_3.htt modify_4.htt chunked.htt nbytes.htt"
 for E in $STDS; do
   ./htt.sh -se scripts/${E}
   if [ $? -ne 0 ]; then
