@@ -30,7 +30,7 @@
  * Version
  ***********************************************************************/
 static const char revision[] = "$Id$";
-static const char g_revision[] = "0.14";
+static const char g_revision[] = "0.15";
 
 /************************************************************************
  * Includes
@@ -873,7 +873,11 @@ static parp_parser_f parp_get_parser(parp_t *self, const char *ct) {
         parser = (parp_parser_f) apr_table_get(self->parsers, type);
       }
       if(!parser) {
+                                if (sconf->parsers) 
         parser = (parp_parser_f) apr_table_get(sconf->parsers, "*/*");
+      }
+      if(!parser) {
+                                parser = (parp_parser_f) apr_table_get(self->parsers, "*/*");
       }
     }
   }
@@ -1312,6 +1316,23 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
 
       parp_body_structure_t *body_structure_entries =
                 (parp_body_structure_t *) self->rw_params_body_structure->elts;
+
+      if(self->len_tmp_buffer > 0) {
+        // we still have some data left from the last filter call
+        apr_off_t toSend = self->len_tmp_buffer;
+        if(toSend > freebytes) {
+          toSend = freebytes;
+        }
+        self->len_tmp_buffer -= toSend;
+        if ((rv = apr_brigade_write(bb, NULL, NULL, self->tmp_buffer, toSend)) != APR_SUCCESS) { return rv;}
+        self->tmp_buffer += toSend;
+        freebytes -= toSend;
+        if(self->len_tmp_buffer > 0) {
+          // still not done...
+          return APR_SUCCESS;
+        }
+      };
+
       for (i = 0; i < self->rw_params_body_structure->nelts; ++i) {
         parp_body_structure_t *bs = &body_structure_entries[i];
 
@@ -1377,6 +1398,16 @@ AP_DECLARE (apr_status_t) parp_forward_filter(ap_filter_t * f,
                       self->raw_body_data = &self->raw_body_data[mp->raw_len];
                       self->raw_body_data_len -= mp->raw_len;
                       mp->written_to_brigade = 1;
+                    } else {
+                      self->tmp_buffer = self->raw_body_data;
+                      self->len_tmp_buffer = mp->raw_len;
+                      self->raw_body_data += mp->raw_len;
+                      self->raw_body_data_len -= mp->raw_len;
+                      mp->written_to_brigade = 1;
+                      if ((rv = apr_brigade_write(bb, NULL, NULL, self->tmp_buffer, freebytes)) != APR_SUCCESS) { return rv;}
+                      self->len_tmp_buffer -= freebytes;
+                      self->tmp_buffer += freebytes;
+                      return APR_SUCCESS;
                     }
                   }
 

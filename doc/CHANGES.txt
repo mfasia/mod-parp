@@ -1,3 +1,8 @@
+Version 0.15
+
+  - Incoperates bug fix patch contributed by JamesWright
+    http://sourceforge.net/p/parp/bugs/3/
+
 Version 0.14
 
   - Fixes potential endless loop when processing huge parameters.
