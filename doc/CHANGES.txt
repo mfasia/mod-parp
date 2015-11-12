@@ -1,3 +1,7 @@
+Version 0.15.1
+
+  - RPM build support.
+
 Version 0.15
 
   - Incoperates bug fix patch contributed by JamesWright
